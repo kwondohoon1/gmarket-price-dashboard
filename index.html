@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>지마켓 가격 모니터</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" />
+<style>
+  :root {
+    --bg: #f7f6f3; --card: #ffffff; --line: #e5e2db; --soft: #f0ede6;
+    --text: #24221d; --muted: #7a766c; --faint: #a5a093;
+    --ok: #23795a; --ok-dark: #185940; --ok-soft: #e7f2ec;
+    --bad: #b3382c; --warn: #a96b1f; --warn-soft: #fdf0dc;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "IBM Plex Sans KR", "Malgun Gothic", system-ui, sans-serif; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 28px 24px 60px; }
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 700; }
+  h2 { font-size: 15px; font-weight: 700; margin: 0 0 10px; }
+  .sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  a { color: var(--ok); text-decoration: none; }
+  a:hover { color: var(--ok-dark); text-decoration: underline; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 20px; display: flex; flex-direction: column; gap: 4px; }
+  .card b { font-size: 26px; font-weight: 700; }
+  .card span { color: var(--muted); font-size: 12px; }
+  .card.good b { color: var(--ok); }
+  .card.watch b { color: var(--warn); }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 20px; margin-bottom: 20px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  input, select { font: inherit; font-size: 13px; padding: 8px 12px; border: 1px solid #d8d4ca; border-radius: 10px; background: var(--card); color: var(--text); }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--soft); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tbody tr:last-child td { border-bottom: 0; }
+  #pairBody tr.item { cursor: pointer; }
+  #pairBody tr.item:hover { background: #fcfbf9; }
+  #pairBody tr.open td { background: var(--ok-soft); }
+  th.num, td.num { text-align: right; }
+  .good { color: var(--ok); }
+  .badtxt { color: var(--bad); }
+  .mute { color: var(--muted); font-size: 12px; }
+  .subline { display: block; color: var(--faint); font-size: 11px; font-weight: 400; }
+  .badge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px; background: var(--warn-soft); color: var(--warn); border: 1px solid #ecd9b8; }
+  tr.expand-row td { background: #fcfbf9; padding: 12px 16px 18px; cursor: default; }
+  .expand-title { font-size: 12px; color: var(--muted); margin: 0 0 8px 2px; }
+  .expand-box { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); min-width: 900px; }
+  .expand-box th, .expand-box td { padding: 8px 10px; }
+  .expand-box tr.ours td { background: var(--ok-soft); color: var(--ok-dark); font-weight: 600; }
+  footer { color: var(--faint); font-size: 12px; text-align: center; margin-top: 24px; }
+  .loading { text-align: center; color: var(--muted); padding: 60px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>지마켓 가격 모니터</h1>
+      <div class="sub">조립PC — 한성컴퓨터와 같은 스펙 경쟁 상품의 가격·판매량 비교 (보기 전용)</div>
+    </div>
+    <div class="sub" id="updatedAt">불러오는 중…</div>
+  </header>
+
+  <div id="app" class="loading">데이터를 불러오는 중이에요…</div>
+
+  <footer>매일 자동 수집된 데이터입니다 · 가격은 실구매가(쿠폰 적용) 기준 · CPU와 그래픽카드(메모리까지)가 같은 상품끼리만 비교합니다</footer>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const el = (tag, props = {}, children = []) => {
+  const node = Object.assign(document.createElement(tag), props);
+  for (const c of [].concat(children)) node.append(c);
+  return node;
+};
+const won = (n) => (n == null ? "-" : n.toLocaleString("ko-KR") + "원");
+const md = (d) => String(d || "").slice(5).replace("-", "/");
+const DOW = ["일", "월", "화", "수", "목", "금", "토"];
+const dow = (d) => (d ? DOW[new Date(d + "T00:00:00Z").getUTCDay()] : "");
+const BRAND_NAME = { ihansung: "한성컴퓨터", perflab: "퍼포먼스랩", CYNEX1314: "씨넥스", assacom2: "아싸컴", preflow01: "프리플로우", seorincni: "서린씨앤아이" };
+const seller = (k) => BRAND_NAME[k] || k || "-";
+const gpuText = (spec) => {
+  if (!spec.gpu) return "?";
+  if (spec.gpu === "IGPU") return "내장그래픽";
+  const name = spec.gpu.replace(/^NV-/, "").replace(/^AMD-/, "RX ");
+  return name + (spec.vram ? " " + spec.vram + "GB" : " (메모리?)");
+};
+const rankArrow = (d) => (d == null ? "" : d > 0 ? "▲" + d : d < 0 ? "▼" + -d : "–");
+const dateTh = (date) => el("th", { className: "num" }, [document.createTextNode(md(date)), el("span", { className: "subline", textContent: dow(date) })]);
+const soldTd = (date, sold, span) => {
+  if (sold == null) return el("td", { className: "mute num", textContent: "—" });
+  const td = el("td", { className: "num " + (sold > 0 ? "good" : "mute") }, [document.createTextNode(sold.toLocaleString("ko-KR") + "대")]);
+  if (span && span.days > 1) td.append(el("span", { className: "subline", textContent: md(span.from) + "→" + md(date) + " " + span.days + "일분" }));
+  return td;
+};
+
+let DATA = null;
+let expanded = null;
+
+function dailyCells(dates, row) {
+  return dates.map((d) => soldTd(d, row.dailySales ? row.dailySales[d] : null, row.dailySpans ? row.dailySpans[d] : null));
+}
+const cumulativeTd = (row) => {
+  const v = row.salesCount == null ? row.popSales : row.salesCount;
+  return el("td", { className: "num", textContent: v == null ? "-" : v.toLocaleString("ko-KR") + "건" });
+};
+
+function expandRow(item, colSpan) {
+  const dates = DATA.pairs.salesDates || [];
+  let content;
+  if (!item.matchCount) {
+    content = el("div", { className: "mute", textContent: "같은 CPU·그래픽 조합의 경쟁 상품이 아직 없어요." });
+  } else {
+    const sizeText = (n, u) => (n == null || n === 0 ? "" : (n > 0 ? "+" : "") + n + u);
+    const ourRow = { ours: true, title: item.title.replace("[한성컴퓨터]", "").trim(), price: item.price, payment: item.payment, salesCount: item.salesCount, popSales: item.popSales };
+    const rows = [ourRow, ...item.matches].sort((a, b) => (a.price == null ? Infinity : a.price) - (b.price == null ? Infinity : b.price));
+    content = el("div", { className: "expand-box" }, [
+      el("table", {}, [
+        el("thead", {}, el("tr", {}, [
+          el("th", { textContent: "가격 순위" }), el("th", { textContent: "판매자" }), el("th", { textContent: "상품" }),
+          el("th", { className: "num", textContent: "실구매가" }), el("th", { textContent: "한성 대비" }),
+          el("th", { className: "num", textContent: "카드 결제가" }),
+          ...dates.map(dateTh),
+          el("th", { className: "num", textContent: "누적 판매" }), el("th", { textContent: "램/저장 차이" }), el("th", { textContent: "비고" }),
+        ])),
+        el("tbody", {}, rows.map((m, idx) =>
+          el("tr", { className: m.ours ? "ours" : "" }, [
+            el("td", { textContent: m.price == null ? "-" : (idx + 1) + "위" }),
+            el("td", { textContent: m.ours ? "한성컴퓨터" : seller(m.brandKey) }),
+            el("td", {}, [
+              m.ours ? document.createTextNode(m.title) : el("a", { href: m.url, target: "_blank", rel: "noreferrer", textContent: m.title }),
+              ...(m.specChanged ? [el("span", { className: "badge", textContent: "스펙 변경" })] : []),
+            ]),
+            el("td", { className: "num", textContent: won(m.price) }),
+            m.ours
+              ? el("td", { textContent: "" })
+              : el("td", {
+                  textContent: m.diff == null ? "-" : m.diff === 0 ? "같은 가격" : m.diff > 0 ? "한성보다 " + m.diff.toLocaleString("ko-KR") + "원 쌈" : "한성보다 " + (-m.diff).toLocaleString("ko-KR") + "원 비쌈",
+                  className: m.diff > 0 ? "badtxt" : m.diff == null ? "mute" : "good",
+                }),
+            el("td", { className: "num mute", textContent: won(m.payment) }),
+            ...(m.ours ? dates.map(() => el("td", { className: "num mute", textContent: "" })) : dailyCells(dates, m)),
+            cumulativeTd(m),
+            m.ours ? el("td") : el("td", { textContent: [sizeText(m.ramDiff, "GB 램"), sizeText(m.storageDiff, "GB 저장")].filter(Boolean).join(" · ") || "동일" }),
+            el("td", { className: "mute", textContent: m.ours ? "" : m.vramUnknown ? "그래픽 메모리 확인 필요" : "" }),
+          ])
+        )),
+      ]),
+    ]);
+  }
+  return el("tr", { className: "expand-row" },
+    el("td", { colSpan }, [
+      el("div", { className: "expand-title", textContent: item.matchCount ? "같은 스펙 경쟁 상품 " + item.matchCount + "개 — 싼 순서 · 날짜별 판매는 경쟁 상품만 표시" : "" }),
+      el("div", { className: "scroll" }, content),
+    ])
+  );
+}
+
+function renderPairs() {
+  const p = DATA.pairs;
+  const mode = $("#pairFilter").value;
+  const q = $("#pairSearch").value.trim().toLowerCase();
+  const rows = p.items.filter((i) => {
+    if (mode === "cheapest" && i.rank !== 1) return false;
+    if (mode === "expensive" && !(i.diffToMin > 0)) return false;
+    if (mode === "matched" && !i.matchCount) return false;
+    return !q || i.title.toLowerCase().includes(q);
+  });
+  const COLS = 12;
+  $("#pairBody").replaceChildren(
+    ...rows.flatMap((i) => {
+      const tr = el("tr", { className: "item" + (i.goodsCode === expanded ? " open" : "") }, [
+        el("td", {}, [
+          el("div", { textContent: i.popRank == null ? "-" : i.popRank + "위" }),
+          el("div", { className: "mute", textContent: i.popPrevRank == null ? "" : "전날 " + i.popPrevRank + "위 " + rankArrow(i.popRankDelta) }),
+        ]),
+        el("td", {}, [
+          document.createTextNode(i.title.replace("[한성컴퓨터]", "").trim()),
+          ...(i.specChanged ? [el("span", { className: "badge", textContent: "스펙 변경" })] : []),
+        ]),
+        el("td", { textContent: (i.spec.cpu || "?").replace(/^(AMD|INTEL)-/, "") }),
+        el("td", { textContent: gpuText(i.spec) }),
+        el("td", { textContent: (i.spec.ram ? i.spec.ram + "GB" : "?") + " / " + (i.spec.storage ? i.spec.storage + "GB" : "?") }),
+        el("td", { textContent: won(i.price) }),
+        el("td", { textContent: won(i.payment), className: "mute" }),
+        cumulativeTd(i),
+        el("td", { textContent: i.matchCount ? i.matchCount + "곳" : "없음", className: i.matchCount ? "" : "mute" }),
+        el("td", { textContent: won(i.rivalMin) }),
+        el("td", {
+          textContent: i.diffToMin == null ? "-" : i.diffToMin > 0 ? i.diffToMin.toLocaleString("ko-KR") + "원 더 비쌈" : i.diffToMin < 0 ? (-i.diffToMin).toLocaleString("ko-KR") + "원 더 쌈" : "같은 가격",
+          className: i.diffToMin > 0 ? "badtxt" : "good",
+        }),
+        el("td", { textContent: i.rank ? i.rank + "위/" + i.rankOf + "곳" : "-" }),
+      ]);
+      tr.onclick = () => { expanded = expanded === i.goodsCode ? null : i.goodsCode; renderPairs(); };
+      return i.goodsCode === expanded ? [tr, expandRow(i, COLS)] : [tr];
+    })
+  );
+}
+
+function render() {
+  const s = DATA.pairs.summary;
+  const c = DATA.summary && DATA.summary.counts;
+  $("#updatedAt").textContent = "마지막 갱신: " + String(DATA.generatedAt).slice(0, 16).replace("T", " ");
+  const app = $("#app");
+  app.className = "";
+  app.replaceChildren(
+    el("div", { className: "cards" }, [
+      ["한성 상품", s.ours, "경쟁 상품 " + s.rivals + "개와 비교", ""],
+      ["비교 가능", s.matched, "같은 스펙의 경쟁 상품 있음", ""],
+      ["한성이 최저가", s.cheapest, "비교 가능한 " + s.matched + "개 중", "good"],
+      ["경쟁사가 더 쌈", Math.max(0, s.matched - s.cheapest), "가격 검토 대상", s.matched - s.cheapest > 0 ? "watch" : ""],
+      ["수집 상품 전체", DATA.summary ? DATA.summary.products : "-", c ? "분석 완료 " + c.done + "개" : "", ""],
+    ].map(([label, value, sub, tone]) =>
+      el("div", { className: "card" + (tone ? " " + tone : "") }, [el("span", { textContent: label }), el("b", { textContent: String(value) }), el("span", { textContent: sub })])
+    )),
+
+    el("div", { className: "panel" }, [
+      el("h2", { textContent: "가격 비교 — 상품을 누르면 같은 스펙 경쟁 상품이 아래에 펼쳐져요" }),
+      el("div", { className: "row" }, [
+        el("select", { id: "pairFilter", onchange: renderPairs }, [
+          el("option", { value: "", textContent: "전체" }),
+          el("option", { value: "matched", textContent: "비교 가능" }),
+          el("option", { value: "cheapest", textContent: "한성이 최저가" }),
+          el("option", { value: "expensive", textContent: "한성이 더 비쌈" }),
+        ]),
+        el("input", { id: "pairSearch", placeholder: "한성 상품 검색", oninput: renderPairs }),
+        el("span", { className: "mute", textContent: (DATA.pairs.salesDates || []).length ? "펼친 표의 날짜별 판매: " + DATA.pairs.salesDates.map(md).join(" · ") : "" }),
+      ]),
+      el("div", { className: "scroll" }, el("table", {}, [
+        el("thead", {}, el("tr", {}, [
+          ...["인기 순위", "한성 상품", "CPU", "그래픽", "램/저장", "실구매가", "카드 결제가"].map((t) => el("th", { textContent: t })),
+          el("th", { className: "num", textContent: "누적 판매" }),
+          ...["비교 대상", "경쟁 최저가", "차이", "가격 순위"].map((t) => el("th", { textContent: t })),
+        ])),
+        el("tbody", { id: "pairBody" }),
+      ])),
+    ]),
+
+    DATA.ranking
+      ? el("div", { className: "panel" }, [
+          el("h2", {}, [
+            document.createTextNode("판매 순위 상위 " + DATA.ranking.items.length + "개 "),
+            el("span", { className: "mute", textContent: DATA.ranking.date + "(" + dow(DATA.ranking.date) + ") 기준" + (DATA.ranking.prevDate ? " · 판매 대수는 " + DATA.ranking.prevDate + " 대비" : "") }),
+          ]),
+          el("div", { className: "scroll" }, el("table", {}, [
+            el("thead", {}, el("tr", {}, [
+              el("th", { textContent: "순위" }), el("th", { textContent: "변동" }), el("th", { textContent: "판매자" }), el("th", { textContent: "상품" }),
+              el("th", { className: "num", textContent: "가격" }), el("th", { className: "num", textContent: "판매" }), el("th", { className: "num", textContent: "누적 판매" }),
+            ])),
+            el("tbody", {}, DATA.ranking.items.map((it) =>
+              el("tr", {}, [
+                el("td", { textContent: it.rank == null ? "-" : it.rank + "위" }),
+                el("td", { textContent: it.prevRank == null ? (it.isNew ? "신규" : "") : rankArrow(it.rankDelta), className: it.rankDelta > 0 ? "good" : it.rankDelta < 0 ? "badtxt" : "mute" }),
+                el("td", { textContent: it.brand || "-", className: it.brand ? "" : "mute" }),
+                el("td", {}, el("a", { href: it.url || "https://item.gmarket.co.kr/Item?goodsCode=" + it.goodsCode, target: "_blank", rel: "noreferrer", textContent: (it.name || it.title || "").slice(0, 60) })),
+                el("td", { className: "num", textContent: it.price == null ? "-" : Number(it.price).toLocaleString("ko-KR") + "원" }),
+                el("td", { className: "num " + (it.soldDelta > 0 ? "good" : "mute"), textContent: it.soldDelta == null ? "—" : it.soldDelta.toLocaleString("ko-KR") + "대" }),
+                el("td", { className: "num", textContent: it.salesCount == null ? "-" : Number(it.salesCount).toLocaleString("ko-KR") + "대" }),
+              ])
+            )),
+          ])),
+        ])
+      : el("span")
+  );
+  renderPairs();
+}
+
+fetch("data/dashboard.json?t=" + Date.now())
+  .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+  .then((d) => { DATA = d; render(); })
+  .catch((e) => { $("#app").textContent = "데이터를 불러오지 못했어요: " + e.message; });
+</script>
+</body>
+</html>
