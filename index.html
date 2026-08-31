@@ -515,9 +515,10 @@ function start(data) {
     }
     $("#unlock").disabled = true;
     $("#lockErr").textContent = "여는 중…";
-    // 글자가 실제로 화면에 찍힌 뒤에 무거운 계산을 시작한다.
-    // (바로 계산에 들어가면 느린 기기에서 화면이 "여는 중…"인 채 멈춘 것처럼 보인다)
-    await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    // 글자가 화면에 찍힐 틈을 준 뒤 무거운 계산을 시작한다.
+    // requestAnimationFrame 은 쓰지 않는다 — 탭이 뒤에 있거나 화면이 안 그려지는 상태면
+    // 영영 실행되지 않아 "여는 중…"에서 멈춰 버린다(실측).
+    await new Promise((r) => setTimeout(r, 30));
     try {
       const data = await decryptPayload(payload, pw);
       safeSet("dashboard-pw", pw);
