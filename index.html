@@ -197,6 +197,17 @@ let expanded = null;
 let rankQuery = "";
 let rankOursOnly = false;
 
+/* 브라우저 저장소가 막혀 있어도 화면이 죽지 않게 감싼다 */
+function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function safeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function safeDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+
+/* 어디서든 오류가 나면 조용히 멈추지 말고 화면에 보여준다 */
+window.onerror = function (msg) {
+  const box = document.getElementById("lockErr");
+  if (box && !document.getElementById("lock").hidden) box.textContent = "문제가 생겼어요: " + msg;
+};
+
 /* ── 잠금 해제 (AES-GCM, 비밀번호에서 열쇠를 만든다) */
 function b64(s) {
   const bin = atob(s);
@@ -255,7 +266,7 @@ function rivalList(item) {
         : m.diff > 0 ? el("span", { className: "r-diff cheap", textContent: "한성보다 " + num(m.diff) + "원 쌈" })
         : el("span", { className: "r-diff exp", textContent: "한성보다 " + num(-m.diff) + "원 비쌈" });
       const lines = m.ours
-        ? ((m.salesCount ?? m.popSales) != null ? ["누적 " + num(m.salesCount ?? m.popSales) + "대"] : [])
+        ? ((m.salesCount != null || m.popSales != null) ? ["누적 " + num(m.salesCount != null ? m.salesCount : m.popSales) + "대"] : [])
         : salesLines(m);
       return el("div", { className: "rrow" + (m.ours ? " ours" : "") }, [
         el("div", { className: "r-rank", textContent: m.price == null ? "-" : (idx + 1) + "위" }),
@@ -287,7 +298,7 @@ function productCard(i) {
   ].filter(Boolean);
   const meta = [
     i.popRank != null ? "인기 " + i.popRank + "위" : null,
-    (i.salesCount ?? i.popSales) != null ? "누적 판매 " + num(i.salesCount ?? i.popSales) : null,
+    (i.salesCount != null || i.popSales != null) ? "누적 판매 " + num(i.salesCount != null ? i.salesCount : i.popSales) : null,
   ].filter(Boolean).join(" · ");
 
   const main = el("div", { className: "pcard-main" }, [
@@ -317,9 +328,9 @@ function pairRows() {
   });
   const sort = $("#sortBox") ? $("#sortBox").value : "risk";
   rows = [...rows];
-  if (sort === "risk") rows.sort((a, b) => (b.diffToMin ?? -Infinity) - (a.diffToMin ?? -Infinity));
-  else if (sort === "pop") rows.sort((a, b) => (a.popRank ?? Infinity) - (b.popRank ?? Infinity));
-  else if (sort === "price") rows.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+  if (sort === "risk") rows.sort((a, b) => (b.diffToMin == null ? -Infinity : b.diffToMin) - (a.diffToMin == null ? -Infinity : a.diffToMin));
+  else if (sort === "pop") rows.sort((a, b) => (a.popRank == null ? Infinity : a.popRank) - (b.popRank == null ? Infinity : b.popRank));
+  else if (sort === "price") rows.sort((a, b) => (a.price == null ? Infinity : a.price) - (b.price == null ? Infinity : b.price));
   return rows;
 }
 
@@ -473,12 +484,12 @@ function start(data) {
   }
   if (!payload.encrypted) return start(payload);
 
-  const saved = localStorage.getItem("dashboard-pw");
+  const saved = safeGet("dashboard-pw");
   if (saved) {
     try {
       return start(await decryptPayload(payload, saved));
     } catch {
-      localStorage.removeItem("dashboard-pw"); // 비밀번호가 바뀌었으면 다시 묻는다
+      safeDel("dashboard-pw"); // 비밀번호가 바뀌었으면 다시 묻는다
     }
   }
   $("#lock").hidden = false;
@@ -489,7 +500,11 @@ function start(data) {
   }
   const tryUnlock = async () => {
     const pw = $("#pw").value.trim();
-    if (!pw) return;
+    if (!pw) {
+      $("#lockErr").textContent = "비밀번호를 입력해 주세요";
+      $("#pw").focus();
+      return;
+    }
     $("#unlock").disabled = true;
     $("#lockErr").textContent = "여는 중…";
     // 글자가 실제로 화면에 찍힌 뒤에 무거운 계산을 시작한다.
@@ -497,7 +512,7 @@ function start(data) {
     await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
     try {
       const data = await decryptPayload(payload, pw);
-      localStorage.setItem("dashboard-pw", pw);
+      safeSet("dashboard-pw", pw);
       $("#lockErr").textContent = "";
       start(data);
     } catch (err) {
