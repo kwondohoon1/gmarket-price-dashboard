@@ -114,6 +114,8 @@
   tr.hansung td:first-child { border-left: 3px solid var(--ok); }
   .up { color: var(--ok); } .down { color: var(--bad); } .mute { color: var(--faint); }
   .newbadge { font-size: 11px; color: var(--warn); font-weight: 600; }
+  .panel-title { font-size: 14px; font-weight: 700; padding: 12px 14px 10px; border-bottom: 1px solid var(--soft); }
+  .panel-title .mute { font-weight: 400; font-size: 12px; }
   .empty { text-align: center; color: var(--faint); padding: 40px 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
 
   /* ── 잠금 화면 */
@@ -349,29 +351,86 @@ function renderPairList() {
   }
 }
 
-function renderRankTable() {
-  const r = DATA.ranking;
-  const rows = (r.items || []).filter((it) => {
-    if (rankOursOnly && !/한성/.test(it.brand || "")) return false;
-    if (!rankQuery) return true;
-    const s = ((it.name || it.title || "") + " " + (it.brand || "")).toLowerCase();
-    return s.includes(rankQuery);
+let salesMode = "hour";      // hour = 시간대별, day = 일자별
+let salesDate = "";          // 시간대별에서 보고 있는 날짜
+let salesBrand = "";
+let salesQuery = "";
+
+/** 지금 보고 있는 표 (시간대별이면 그 날짜의 것) */
+function salesTable() {
+  const s = DATA.sales;
+  if (!s) return null;
+  if (salesMode === "day") return s.daily;
+  if (!salesDate) salesDate = (s.hourlyDates || [])[(s.hourlyDates || []).length - 1] || "";
+  return s.hourly ? s.hourly[salesDate] : null;
+}
+
+function salesRows(t) {
+  // 순위는 필터와 무관하게 합계 기준으로 먼저 매긴다 (필터를 걸어도 번호가 흔들리지 않게)
+  const ranked = (t.rows || []).map((r, i) => ({ r: r, no: i + 1 }));
+  return ranked.filter(function (x) {
+    if (salesBrand && (x.r.brand || "") !== salesBrand) return false;
+    if (!salesQuery) return true;
+    return ((x.r.title || "") + " " + (x.r.brand || "")).toLowerCase().indexOf(salesQuery) !== -1;
   });
-  $("#rankCount").textContent = rows.length + "개 표시 (전체 " + r.items.length + "개)";
-  $("#rankBody").replaceChildren(...(rows.length ? rows.map((it) => {
-    const isHansung = /한성/.test(it.brand || "");
+}
+
+function renderSalesTable() {
+  const t = salesTable();
+  if (!t) return;
+  const cols = t.columns || [];
+  const rows = salesRows(t);
+  const hour = salesMode === "hour";
+
+  $("#salesMeta").textContent = hour
+    ? t.date + " · 상품 " + rows.length + "개 · 시간대별 판매 대수 (" + cols.length + "회 수집)"
+    : t.from + " ~ " + t.to + " · 상품 " + rows.length + "개 · 합계 기준 순위";
+
+  $("#salesHead").replaceChildren(el("tr", {}, [
+    el("th", { textContent: "순위" }),
+    el("th", { textContent: "브랜드" }),
+    el("th", { className: "pname", textContent: "상품명" }),
+    ...cols.map((c) => el("th", { className: "num" }, [
+      document.createTextNode(c.label),
+      c.sub ? el("span", { className: "subline", textContent: c.sub }) : el("span"),
+    ])),
+    el("th", { className: "num", textContent: hour ? "하루 판매" : "합계" }),
+  ]));
+
+  $("#salesBody").replaceChildren(...(rows.length ? rows.map(function (x) {
+    const r = x.r;
+    const isHansung = /한성/.test(r.brand || "");
     return el("tr", { className: isHansung ? "hansung" : "" }, [
-      el("td", { textContent: it.rank == null ? "-" : it.rank + "위" }),
-      it.prevRank == null
-        ? el("td", {}, el("span", { className: it.isNew ? "newbadge" : "mute", textContent: it.isNew ? "신규" : "" }))
-        : el("td", { className: it.rankDelta > 0 ? "up" : it.rankDelta < 0 ? "down" : "mute", textContent: it.rankDelta > 0 ? "▲" + it.rankDelta : it.rankDelta < 0 ? "▼" + -it.rankDelta : "–" }),
-      el("td", { textContent: it.brand || "-", className: it.brand ? "" : "mute" }),
-      el("td", { className: "pname" }, el("a", { href: it.url || "https://item.gmarket.co.kr/Item?goodsCode=" + it.goodsCode, target: "_blank", rel: "noreferrer", textContent: (it.name || it.title || "").slice(0, 70) })),
-      el("td", { className: "num", textContent: it.price == null ? "-" : num(it.price) + "원" }),
-      el("td", { className: "num " + (it.soldDelta > 0 ? "up" : "mute"), textContent: it.soldDelta == null ? "—" : num(it.soldDelta) + "대" }),
-      el("td", { className: "num", textContent: it.salesCount == null ? "-" : num(it.salesCount) + "대" }),
+      el("td", { className: "num", textContent: String(x.no) }),
+      el("td", { textContent: r.brand || "-", className: r.brand ? "" : "mute" }),
+      el("td", { className: "pname" }, el("a", { href: r.url, target: "_blank", rel: "noreferrer", textContent: r.title || "(상품명 없음)" })),
+      ...cols.map(function (c) {
+        const cell = r.cells ? r.cells[c.key] : null;
+        if (!cell) return el("td", { className: "num mute", textContent: "—" });
+        if (hour) {
+          // 누적 대수와 직전 수집 대비 증가분, 그 아래 그때 가격
+          const box = el("td", { className: "num" }, [
+            el("div", {}, [
+              document.createTextNode(cell.cumulative == null ? "-" : num(cell.cumulative) + "대"),
+              cell.sold == null ? el("span") : el("span", {
+                className: cell.sold > 0 ? "up" : "mute",
+                textContent: " (" + (cell.sold > 0 ? "+" : "") + num(cell.sold) + ")",
+              }),
+            ]),
+          ]);
+          if (cell.price != null) box.append(el("span", { className: "subline", textContent: num(cell.price) + "원" }));
+          return box;
+        }
+        const price = r.cellPrice ? r.cellPrice[c.key] : null;
+        const box = el("td", { className: "num " + (cell.sold > 0 ? "up" : "mute") }, [
+          document.createTextNode(cell.sold == null ? "—" : num(cell.sold) + "대"),
+        ]);
+        if (price != null) box.append(el("span", { className: "subline", textContent: "최저 " + num(price) + "원" }));
+        return box;
+      }),
+      el("td", { className: "num" }, el("b", { textContent: num(r.total) + "대" })),
     ]);
-  }) : [el("tr", {}, el("td", { colSpan: 7, className: "mute", textContent: "조건에 맞는 상품이 없어요" }))]));
+  }) : [el("tr", {}, el("td", { colSpan: cols.length + 4, className: "mute", textContent: "조건에 맞는 상품이 없어요" }))]));
 }
 
 /* ── 화면별 그리기 */
@@ -436,27 +495,42 @@ function viewPairs() {
 }
 
 function viewRank() {
-  const r = DATA.ranking;
-  if (!r) return [el("div", { className: "empty", textContent: "아직 판매 순위 데이터가 없어요" })];
+  const sales = DATA.sales;
+  if (!sales || !sales.daily) return [el("div", { className: "empty", textContent: "아직 판매량 데이터가 없어요" })];
+  const hourDates = sales.hourlyDates || [];
+  if (!salesDate) salesDate = hourDates[hourDates.length - 1] || "";
+
   return [
     el("div", { className: "page-head" }, el("div", {}, [
-      el("h1", { textContent: "판매 순위" }),
-      el("div", { className: "page-sub", textContent: r.date + " (" + dow(r.date) + ") 기준" + (r.prevDate ? " · 판매 대수는 " + r.prevDate + " 이후 판 것" : "") + " · 초록 줄이 한성" }),
+      el("h1", { textContent: "판매량 추이" }),
+      el("div", { className: "page-sub", textContent: "시간대별 판매량과 급상승 상품을 순위로 봅니다 · 초록 줄이 한성" }),
     ])),
     el("div", { className: "controls" }, [
-      el("input", { id: "rankSearch", placeholder: "상품·판매자 검색", value: rankQuery,
-        oninput: (e) => { rankQuery = e.target.value.trim().toLowerCase(); renderRankTable(); } }),
-      el("button", { className: "chip-btn" + (rankOursOnly ? " on" : ""), textContent: "한성만 보기",
-        onclick: (e) => { rankOursOnly = !rankOursOnly; e.target.className = "chip-btn" + (rankOursOnly ? " on" : ""); renderRankTable(); } }),
-      el("span", { className: "mute", id: "rankCount" }),
+      el("select", {
+        onchange: (e) => { salesMode = e.target.value; render(); },
+      }, [
+        el("option", { value: "hour", textContent: "시간대별", selected: salesMode === "hour" }),
+        el("option", { value: "day", textContent: "일자별", selected: salesMode === "day" }),
+      ]),
+      salesMode === "hour" && hourDates.length
+        ? el("select", { onchange: (e) => { salesDate = e.target.value; renderSalesTable(); } },
+            [...hourDates].reverse().map((d, i) =>
+              el("option", { value: d, textContent: d + (i === 0 ? " (최신)" : ""), selected: d === salesDate })))
+        : el("span", { className: "mute", textContent: sales.daily.from + " ~ " + sales.daily.to }),
+      el("select", { onchange: (e) => { salesBrand = e.target.value; renderSalesTable(); } }, [
+        el("option", { value: "", textContent: "전체 브랜드" }),
+        ...(sales.brands || []).map((b) => el("option", { value: b, textContent: b, selected: b === salesBrand })),
+      ]),
+      el("input", { placeholder: "상품명 검색", value: salesQuery,
+        oninput: (e) => { salesQuery = e.target.value.trim().toLowerCase(); renderSalesTable(); } }),
     ]),
-    el("div", { className: "panel" }, el("div", { className: "scroll" }, el("table", {}, [
-      el("thead", {}, el("tr", {}, [
-        el("th", { textContent: "순위" }), el("th", { textContent: "변동" }), el("th", { textContent: "판매자" }), el("th", { textContent: "상품" }),
-        el("th", { className: "num", textContent: "가격" }), el("th", { className: "num", textContent: "판매" }), el("th", { className: "num", textContent: "누적 판매" }),
-      ])),
-      el("tbody", { id: "rankBody" }),
-    ]))),
+    el("div", { className: "panel" }, [
+      el("div", { className: "panel-title" }, [
+        document.createTextNode(salesMode === "hour" ? "🔥 급상승 순위 " : "📅 일자별 판매 순위 "),
+        el("span", { className: "mute", id: "salesMeta" }),
+      ]),
+      el("div", { className: "scroll" }, el("table", {}, [el("thead", { id: "salesHead" }), el("tbody", { id: "salesBody" })])),
+    ]),
   ];
 }
 
@@ -465,13 +539,13 @@ function render() {
   app.className = "";
   app.replaceChildren(...(tab === "home" ? viewHome() : tab === "pairs" ? viewPairs() : viewRank()));
   if (tab === "pairs") renderPairList();
-  if (tab === "rank") renderRankTable();
+  if (tab === "rank") renderSalesTable();
 }
 
 function start(data) {
   DATA = data;
   $("#cntPairs").textContent = DATA.pairs.summary.ours;
-  $("#cntRank").textContent = DATA.ranking ? DATA.ranking.items.length : "";
+  $("#cntRank").textContent = DATA.sales && DATA.sales.daily ? DATA.sales.daily.rows.length : "";
   $("#sideFoot").textContent = "마지막 갱신\n" + String(DATA.generatedAt).slice(0, 16).replace("T", " ");
   $("#sideFoot").style.whiteSpace = "pre-line";
   $("#lock").hidden = true;
@@ -491,14 +565,7 @@ function start(data) {
   }
   if (!payload.encrypted) return start(payload);
 
-  const saved = safeGet("dashboard-pw");
-  if (saved) {
-    try {
-      return start(await decryptPayload(payload, saved));
-    } catch {
-      safeDel("dashboard-pw"); // 비밀번호가 바뀌었으면 다시 묻는다
-    }
-  }
+  // 비밀번호는 일부러 저장하지 않는다 — 창을 새로 열면 항상 다시 묻는다.
   $("#lock").hidden = false;
   $("#pw").focus();
   if (!window.crypto || !window.crypto.subtle) {
@@ -521,7 +588,6 @@ function start(data) {
     await new Promise((r) => setTimeout(r, 30));
     try {
       const data = await decryptPayload(payload, pw);
-      safeSet("dashboard-pw", pw);
       $("#lockErr").textContent = "";
       start(data);
     } catch (err) {
