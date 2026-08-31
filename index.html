@@ -198,7 +198,12 @@ let rankQuery = "";
 let rankOursOnly = false;
 
 /* ── 잠금 해제 (AES-GCM, 비밀번호에서 열쇠를 만든다) */
-const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+function b64(s) {
+  const bin = atob(s);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
 async function decryptPayload(payload, password) {
   const enc = new TextEncoder();
   const base = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
@@ -470,21 +475,40 @@ function start(data) {
 
   const saved = localStorage.getItem("dashboard-pw");
   if (saved) {
-    try { return start(await decryptPayload(payload, saved)); } catch { localStorage.removeItem("dashboard-pw"); }
+    try {
+      return start(await decryptPayload(payload, saved));
+    } catch {
+      localStorage.removeItem("dashboard-pw"); // 비밀번호가 바뀌었으면 다시 묻는다
+    }
   }
   $("#lock").hidden = false;
   $("#pw").focus();
+  if (!window.crypto || !window.crypto.subtle) {
+    $("#lockErr").textContent = "이 브라우저에서는 열 수 없어요 (주소가 https 인지 확인해 주세요)";
+    return;
+  }
   const tryUnlock = async () => {
-    const pw = $("#pw").value;
+    const pw = $("#pw").value.trim();
     if (!pw) return;
+    $("#unlock").disabled = true;
     $("#lockErr").textContent = "여는 중…";
+    // 글자가 실제로 화면에 찍힌 뒤에 무거운 계산을 시작한다.
+    // (바로 계산에 들어가면 느린 기기에서 화면이 "여는 중…"인 채 멈춘 것처럼 보인다)
+    await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
     try {
       const data = await decryptPayload(payload, pw);
       localStorage.setItem("dashboard-pw", pw);
+      $("#lockErr").textContent = "";
       start(data);
-    } catch {
-      $("#lockErr").textContent = "비밀번호가 맞지 않아요";
+    } catch (err) {
+      const msg = String((err && err.name) || err);
+      // 비밀번호가 틀리면 OperationError 가 난다. 그 밖의 오류는 이유를 그대로 보여준다.
+      $("#lockErr").textContent = /Operation/i.test(msg)
+        ? "비밀번호가 맞지 않아요"
+        : "열지 못했어요: " + msg + " — 새로고침(Ctrl+Shift+R) 후 다시 시도해 주세요";
       $("#pw").select();
+    } finally {
+      $("#unlock").disabled = false;
     }
   };
   $("#unlock").onclick = tryUnlock;
