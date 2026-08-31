@@ -118,6 +118,8 @@
 
   /* ── 잠금 화면 */
   #lock { position: fixed; inset: 0; background: var(--ok-deep); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+  /* hidden 속성만으로는 안 숨는다 — 위의 display:flex 가 이겨서 창이 계속 떠 있었다 */
+  #lock[hidden] { display: none; }
   #lock .box { background: var(--card); border-radius: 16px; padding: 30px 32px; width: 100%; max-width: 380px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
   #lock h2 { margin: 0 0 6px; font-size: 18px; font-weight: 700; }
   #lock p { margin: 0 0 18px; font-size: 13px; color: var(--muted); }
@@ -191,6 +193,11 @@ const gpuText = (spec) => {
 };
 
 let DATA = null;
+let ready = false; // 데이터를 받아 잠금 해제 준비가 끝났는지
+// 데이터가 오기 전에 눌러도 아무 일도 없는 것처럼 보이지 않게, 처음부터 안내를 달아 둔다
+document.getElementById("unlock").onclick = () => {
+  if (!ready) document.getElementById("lockErr").textContent = "데이터를 불러오는 중이에요 — 잠시 뒤 다시 눌러 주세요";
+};
 let tab = "home";
 let filterMode = "all";
 let expanded = null;
@@ -498,6 +505,7 @@ function start(data) {
     $("#lockErr").textContent = "이 브라우저에서는 열 수 없어요 (주소가 https 인지 확인해 주세요)";
     return;
   }
+  ready = true;
   const tryUnlock = async () => {
     const pw = $("#pw").value.trim();
     if (!pw) {
