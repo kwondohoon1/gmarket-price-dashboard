@@ -152,7 +152,7 @@ const num = (n) => (n == null ? "-" : Number(n).toLocaleString("ko-KR"));
 const md = (d) => String(d || "").slice(5).replace("-", "/");
 const DOW = ["일", "월", "화", "수", "목", "금", "토"];
 const dow = (d) => (d ? DOW[new Date(d + "T00:00:00Z").getUTCDay()] : "");
-const BRAND_NAME = { ihansung: "한성컴퓨터", perflab: "퍼포먼스랩", CYNEX1314: "씨넥스", assacom2: "아싸컴", preflow01: "프리플로우", seorincni: "서린씨앤아이" };
+const BRAND_NAME = { ihansung: "한성컴퓨터", perflab: "퍼플랩", CYNEX1314: "씨넥스", assacom2: "아싸컴", preflow01: "프리플로우", seorincni: "서린씨앤아이" };
 const seller = (k) => BRAND_NAME[k] || k || "-";
 const gpuText = (spec) => {
   if (!spec.gpu) return null;
