@@ -452,7 +452,7 @@ function viewHome() {
       ["한성 상품", s.ours + "개", "경쟁 상품 " + s.rivals + "개와 비교", ""],
       ["한성이 최저가", s.cheapest + "개", "비교 가능한 " + s.matched + "개 중", "good"],
       ["경쟁사가 더 쌈", behind + "개", "가격 검토 대상", behind > 0 ? "risk" : ""],
-      ["판매 순위 수집", DATA.ranking ? DATA.ranking.items.length + "위까지" : "-", DATA.ranking ? DATA.ranking.date + " 기준" : "", ""],
+      ["판매 순위 수집", DATA.ranking ? DATA.ranking.count + "위까지" : "-", DATA.ranking ? DATA.ranking.date + " 기준" : "", ""],
     ].map(([label, value, sub, tone]) =>
       el("div", { className: "stat" + (tone ? " " + tone : "") }, [
         el("div", { className: "label", textContent: label }),
@@ -551,7 +551,7 @@ function start(data) {
   DATA = data;
   $("#cntPairs").textContent = DATA.pairs.summary.ours;
   $("#cntRank").textContent = DATA.sales && DATA.sales.daily ? DATA.sales.daily.rows.length : "";
-  $("#sideFoot").textContent = "마지막 갱신\n" + String(DATA.generatedAt).slice(0, 16).replace("T", " ");
+  $("#sideFoot").textContent = "마지막 갱신\n" + String(DATA.generatedAt).slice(0, 16).replace("T", " ") + "\n(2시간마다 갱신)";
   $("#sideFoot").style.whiteSpace = "pre-line";
   $("#lock").hidden = true;
   render();
