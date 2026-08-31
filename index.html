@@ -14,22 +14,39 @@
     --shadow: 0 1px 3px rgba(28, 25, 18, 0.06);
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "IBM Plex Sans KR", "Malgun Gothic", system-ui, sans-serif; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "IBM Plex Sans KR", "Malgun Gothic", system-ui, sans-serif; display: flex; }
   a { color: var(--ok); text-decoration: none; }
   a:hover { color: var(--ok-dark); text-decoration: underline; }
 
-  /* ── 상단 띠 */
-  .band { background: var(--ok-deep); color: #f2f7f4; padding: 34px 24px 74px; }
-  .band-inner, .wrap { max-width: 1180px; margin: 0 auto; }
-  .band-top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  .band h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
-  .band .tagline { margin-top: 6px; font-size: 13px; color: #a8c5b7; }
-  .band .stamp { font-size: 12px; color: #a8c5b7; }
-  .band .stamp b { color: #ffffff; font-weight: 600; }
+  /* ── 왼쪽 탭 */
+  #side {
+    width: 216px; flex-shrink: 0; background: var(--card); border-right: 1px solid var(--line);
+    padding: 20px 12px; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh;
+  }
+  .brand { padding: 6px 12px 18px; }
+  .brand-name { font-size: 16px; font-weight: 700; }
+  .brand-sub { font-size: 12px; color: var(--muted); }
+  #tabs { display: flex; flex-direction: column; gap: 4px; flex-grow: 1; }
+  #tabs button {
+    border: 0; background: transparent; color: #55524a; font: inherit; font-size: 14px;
+    text-align: left; padding: 10px 12px; border-radius: 10px; cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  #tabs button:hover { background: var(--soft); }
+  #tabs button.on { background: var(--ok-soft); color: var(--ok-dark); font-weight: 600; }
+  #tabs .count { font-size: 11.5px; color: var(--faint); font-weight: 400; }
+  #tabs button.on .count { color: var(--ok); }
+  .side-foot { font-size: 11.5px; color: var(--faint); padding: 12px 12px 0; border-top: 1px solid var(--soft); line-height: 1.6; }
 
-  /* ── 요약 숫자 (띠에 걸치는 카드) */
-  .wrap { padding: 0 24px 56px; }
-  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: -46px; margin-bottom: 26px; }
+  /* ── 본문 */
+  main { flex-grow: 1; min-width: 0; padding: 26px 30px 50px; }
+  .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+  h1 { margin: 0; font-size: 21px; font-weight: 700; }
+  .page-sub { margin-top: 4px; font-size: 13px; color: var(--muted); }
+  section[hidden] { display: none; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
   .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 20px; box-shadow: var(--shadow); }
   .stat .label { font-size: 12px; color: var(--muted); }
   .stat b { display: block; font-size: 28px; font-weight: 700; margin: 2px 0; }
@@ -37,10 +54,6 @@
   .stat.good b { color: var(--ok); }
   .stat.risk b { color: var(--bad); }
 
-  /* ── 섹션 */
-  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 26px 0 14px; }
-  .section-head h2 { margin: 0; font-size: 17px; font-weight: 700; }
-  .section-head .hint-text { font-size: 12px; color: var(--faint); }
   .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
   .chip-btn { border: 1px solid #d8d4ca; background: var(--card); color: #55524a; font: inherit; font-size: 13px; padding: 7px 14px; border-radius: 999px; cursor: pointer; }
   .chip-btn.on { background: #24221d; border-color: #24221d; color: #ffffff; font-weight: 600; }
@@ -65,19 +78,17 @@
   .verdict.best { background: var(--ok-soft); color: var(--ok-dark); }
   .verdict.behind { background: var(--bad-soft); color: var(--bad); }
   .verdict.none { background: var(--soft); color: var(--muted); font-weight: 500; }
-  .caret { flex: 0 0 auto; color: var(--faint); transition: transform 0.15s; font-size: 11px; }
+  .caret { flex: 0 0 auto; color: var(--faint); font-size: 11px; transition: transform 0.15s; }
   .pcard.open .caret { transform: rotate(180deg); }
 
-  /* ── 카드 안 경쟁 상품 목록 */
   .rivals { border-top: 1px solid var(--soft); background: #fbfaf7; padding: 6px 20px 14px; }
   .rivals-note { font-size: 11.5px; color: var(--faint); padding: 8px 2px 6px; }
   .rrow { display: flex; align-items: center; gap: 14px; padding: 9px 10px; border-radius: 10px; }
   .rrow + .rrow { margin-top: 2px; }
   .rrow.ours { background: var(--ok-soft); }
-  .r-rank { flex: 0 0 34px; width: 34px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--muted); background: var(--soft); border-radius: 8px; }
-  .rrow.ours .r-rank { background: var(--ok); color: #ffffff; }
+  .r-rank { flex: 0 0 34px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--muted); background: var(--soft); border-radius: 8px; }
   .rrow:first-child .r-rank { background: #24221d; color: #ffffff; }
-  .rrow.ours:first-child .r-rank { background: var(--ok); }
+  .rrow.ours .r-rank { background: var(--ok); color: #ffffff; }
   .r-info { flex: 1 1 auto; min-width: 0; }
   .r-seller { font-size: 13px; font-weight: 700; }
   .rrow.ours .r-seller { color: var(--ok-dark); }
@@ -90,54 +101,73 @@
   .r-diff.exp { color: var(--ok); }
   .r-diff.same { color: var(--muted); font-weight: 500; }
 
-  /* ── 판매 순위 */
-  .rank-panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
-  .rank-scroll { overflow-x: auto; }
+  /* ── 표 */
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+  .scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--soft); white-space: nowrap; }
   td.pname { white-space: normal; min-width: 240px; }
-  th { color: var(--muted); font-weight: 600; font-size: 12px; background: #fcfbf9; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; background: #fcfbf9; position: sticky; top: 0; z-index: 1; }
   tbody tr:last-child td { border-bottom: 0; }
   th.num, td.num { text-align: right; }
   tr.hansung td { background: var(--ok-soft); }
   tr.hansung td:first-child { border-left: 3px solid var(--ok); }
   .up { color: var(--ok); } .down { color: var(--bad); } .mute { color: var(--faint); }
   .newbadge { font-size: 11px; color: var(--warn); font-weight: 600; }
-
-  footer { color: var(--faint); font-size: 12px; text-align: center; margin-top: 34px; line-height: 1.8; }
-  .loading { text-align: center; color: var(--muted); padding: 80px 0; }
   .empty { text-align: center; color: var(--faint); padding: 40px 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
 
+  /* ── 잠금 화면 */
+  #lock { position: fixed; inset: 0; background: var(--ok-deep); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+  #lock .box { background: var(--card); border-radius: 16px; padding: 30px 32px; width: 100%; max-width: 380px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+  #lock h2 { margin: 0 0 6px; font-size: 18px; font-weight: 700; }
+  #lock p { margin: 0 0 18px; font-size: 13px; color: var(--muted); }
+  #lock input { width: 100%; font: inherit; font-size: 15px; padding: 11px 14px; border: 1px solid #d8d4ca; border-radius: 10px; }
+  #lock button { width: 100%; margin-top: 10px; font: inherit; font-size: 15px; font-weight: 600; padding: 11px; border: 0; border-radius: 10px; background: var(--ok); color: #fff; cursor: pointer; }
+  #lock button:hover { background: var(--ok-dark); }
+  #lock .err { color: var(--bad); font-size: 13px; margin-top: 10px; min-height: 18px; }
+  .loading { text-align: center; color: var(--muted); padding: 80px 0; }
+
   @media (max-width: 860px) {
-    .band { padding: 26px 18px 66px; }
-    .wrap { padding: 0 14px 40px; }
+    body { flex-direction: column; }
+    #side { width: 100%; height: auto; position: static; flex-direction: row; align-items: center; gap: 6px; padding: 10px; overflow-x: auto; }
+    .brand, .side-foot { display: none; }
+    #tabs { flex-direction: row; }
+    #tabs button { white-space: nowrap; }
+    main { padding: 18px 14px 40px; }
     .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .pcard-main { flex-wrap: wrap; gap: 10px; }
-    .p-side { flex-direction: row; align-items: center; gap: 10px; width: 100%; justify-content: space-between; }
+    .p-side { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; }
     .r-sales { display: none; }
   }
 </style>
 </head>
 <body>
 
-<div class="band">
-  <div class="band-inner">
-    <div class="band-top">
-      <div>
-        <h1>지마켓 가격 모니터</h1>
-        <div class="tagline">조립PC — 한성컴퓨터와 같은 스펙 경쟁 상품의 가격·판매량 (보기 전용, 매일 자동 갱신)</div>
-      </div>
-      <div class="stamp" id="updatedAt">불러오는 중…</div>
-    </div>
+<aside id="side">
+  <div class="brand">
+    <div class="brand-name">지마켓 가격 모니터</div>
+    <div class="brand-sub">조립PC 가격·스펙</div>
   </div>
-</div>
+  <nav id="tabs">
+    <button data-tab="home" class="on">현황</button>
+    <button data-tab="pairs">가격 비교 <span class="count" id="cntPairs"></span></button>
+    <button data-tab="rank">판매 순위 <span class="count" id="cntRank"></span></button>
+  </nav>
+  <div class="side-foot" id="sideFoot"></div>
+</aside>
 
-<div class="wrap">
+<main>
   <div id="app" class="loading">데이터를 불러오는 중이에요…</div>
-  <footer>
-    가격은 실구매가(쿠폰 적용) 기준 · CPU와 그래픽카드(메모리까지)가 같은 상품끼리만 비교합니다<br />
-    매일 저녁 자동 수집 · 한성컴퓨터
-  </footer>
+</main>
+
+<div id="lock" hidden>
+  <div class="box">
+    <h2>비밀번호를 입력해 주세요</h2>
+    <p>지마켓 가격 모니터 — 사내 열람용이에요.</p>
+    <input type="password" id="pw" placeholder="비밀번호" autocomplete="current-password" />
+    <button id="unlock">열기</button>
+    <div class="err" id="lockErr"></div>
+  </div>
 </div>
 
 <script>
@@ -157,22 +187,44 @@ const seller = (k) => BRAND_NAME[k] || k || "-";
 const gpuText = (spec) => {
   if (!spec.gpu) return null;
   if (spec.gpu === "IGPU") return "내장그래픽";
-  const name = spec.gpu.replace(/^NV-/, "RTX ").replace(/^AMD-/, "RX ");
-  return name + (spec.vram ? " " + spec.vram + "GB" : "");
+  return spec.gpu.replace(/^NV-/, "RTX ").replace(/^AMD-/, "RX ") + (spec.vram ? " " + spec.vram + "GB" : "");
 };
 
 let DATA = null;
+let tab = "home";
 let filterMode = "all";
 let expanded = null;
+let rankQuery = "";
+let rankOursOnly = false;
 
-/** 경쟁 상품 행의 최근 판매: 날짜별 값이 있으면 "4 · 5 · 7대"처럼 압축해 보여준다 */
-function salesText(m) {
+/* ── 잠금 해제 (AES-GCM, 비밀번호에서 열쇠를 만든다) */
+const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+async function decryptPayload(payload, password) {
+  const enc = new TextEncoder();
+  const base = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: b64(payload.kdf.salt), iterations: payload.kdf.iterations, hash: "SHA-256" },
+    base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+  );
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(payload.iv) }, key, b64(payload.data));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+/* ── 탭 */
+for (const btn of document.querySelectorAll("#tabs button")) {
+  btn.onclick = () => {
+    tab = btn.dataset.tab;
+    for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("on", b === btn);
+    render();
+  };
+}
+
+function salesLines(m) {
   const dates = DATA.pairs.salesDates || [];
   const daily = dates.map((d) => (m.dailySales ? m.dailySales[d] : null));
-  const has = daily.some((v) => v != null);
   const cumulative = m.salesCount == null ? m.popSales : m.salesCount;
   const lines = [];
-  if (has) lines.push("최근 판매 " + daily.map((v) => (v == null ? "·" : num(v))).join(" · ") + "대");
+  if (daily.some((v) => v != null)) lines.push("최근 판매 " + daily.map((v) => (v == null ? "·" : num(v))).join(" · ") + "대");
   if (cumulative != null) lines.push("누적 " + num(cumulative) + "대");
   return lines;
 }
@@ -189,19 +241,17 @@ function rivalList(item) {
   const rows = [ourRow, ...item.matches].sort((a, b) => (a.price == null ? Infinity : a.price) - (b.price == null ? Infinity : b.price));
   const dates = DATA.pairs.salesDates || [];
   return el("div", { className: "rivals" }, [
-    el("div", { className: "rivals-note", textContent:
-      "같은 스펙 " + (rows.length) + "개 상품 — 싼 순서" + (dates.length ? " · 최근 판매는 " + dates.map(md).join("→") + " 사이 판 대수 (경쟁 상품만)" : "") }),
+    el("div", { className: "rivals-note", textContent: "같은 스펙 " + rows.length + "개 상품 — 싼 순서" + (dates.length ? " · 최근 판매는 " + dates.map(md).join("→") + " 사이 판 대수 (경쟁 상품만)" : "") }),
     ...rows.map((m, idx) => {
       const diffEl = m.ours
         ? el("span", { className: "r-diff same", textContent: "우리 판매가" })
-        : m.diff == null
-          ? el("span", { className: "r-diff same", textContent: "" })
-          : m.diff === 0
-            ? el("span", { className: "r-diff same", textContent: "같은 가격" })
-            : m.diff > 0
-              ? el("span", { className: "r-diff cheap", textContent: "한성보다 " + num(m.diff) + "원 쌈" })
-              : el("span", { className: "r-diff exp", textContent: "한성보다 " + num(-m.diff) + "원 비쌈" });
-      const lines = m.ours ? (m.salesCount != null || m.popSales != null ? ["누적 " + num(m.salesCount == null ? m.popSales : m.salesCount) + "대"] : []) : salesText(m);
+        : m.diff == null ? el("span", { className: "r-diff same", textContent: "" })
+        : m.diff === 0 ? el("span", { className: "r-diff same", textContent: "같은 가격" })
+        : m.diff > 0 ? el("span", { className: "r-diff cheap", textContent: "한성보다 " + num(m.diff) + "원 쌈" })
+        : el("span", { className: "r-diff exp", textContent: "한성보다 " + num(-m.diff) + "원 비쌈" });
+      const lines = m.ours
+        ? ((m.salesCount ?? m.popSales) != null ? ["누적 " + num(m.salesCount ?? m.popSales) + "대"] : [])
+        : salesLines(m);
       return el("div", { className: "rrow" + (m.ours ? " ours" : "") }, [
         el("div", { className: "r-rank", textContent: m.price == null ? "-" : (idx + 1) + "위" }),
         el("div", { className: "r-info" }, [
@@ -210,9 +260,8 @@ function rivalList(item) {
             ...(m.specChanged ? [el("span", { className: "chip warn", style: "margin-left:6px", textContent: "스펙 변경" })] : []),
             ...(!m.ours && m.vramUnknown ? [el("span", { className: "chip", style: "margin-left:6px", textContent: "그래픽 메모리 확인 필요" })] : []),
           ]),
-          m.ours
-            ? el("div", { className: "r-name", textContent: m.title })
-            : el("div", { className: "r-name" }, el("a", { href: m.url, target: "_blank", rel: "noreferrer", textContent: m.title })),
+          m.ours ? el("div", { className: "r-name", textContent: m.title })
+                 : el("div", { className: "r-name" }, el("a", { href: m.url, target: "_blank", rel: "noreferrer", textContent: m.title })),
         ]),
         el("div", { className: "r-sales" }, lines.map((t) => el("div", { textContent: t }))),
         el("div", { className: "r-price" }, [el("b", { textContent: won(m.price) }), diffEl]),
@@ -248,13 +297,13 @@ function productCard(i) {
     ]),
     el("div", { className: "caret", textContent: "▼" }),
   ]);
-  main.onclick = () => { expanded = expanded === i.goodsCode ? null : i.goodsCode; renderList(); };
+  main.onclick = () => { expanded = expanded === i.goodsCode ? null : i.goodsCode; renderPairList(); };
   card.append(main);
   if (i.goodsCode === expanded) card.append(rivalList(i));
   return card;
 }
 
-function currentRows() {
+function pairRows() {
   const q = ($("#searchBox") ? $("#searchBox").value : "").trim().toLowerCase();
   let rows = DATA.pairs.items.filter((i) => {
     if (filterMode === "best" && i.rank !== 1) return false;
@@ -269,24 +318,49 @@ function currentRows() {
   return rows;
 }
 
-function renderList() {
-  const rows = currentRows();
-  const box = $("#plist");
-  box.replaceChildren(...(rows.length ? rows.map(productCard) : [el("div", { className: "empty", textContent: "조건에 맞는 상품이 없어요" })]));
+function renderPairList() {
+  const rows = pairRows();
+  $("#plist").replaceChildren(...(rows.length ? rows.map(productCard) : [el("div", { className: "empty", textContent: "조건에 맞는 상품이 없어요" })]));
   for (const [k, id] of [["all", "fAll"], ["best", "fBest"], ["behind", "fBehind"]]) {
-    $("#" + id).className = "chip-btn" + (filterMode === k ? " on" : "");
+    if ($("#" + id)) $("#" + id).className = "chip-btn" + (filterMode === k ? " on" : "");
   }
 }
 
-function render() {
+function renderRankTable() {
+  const r = DATA.ranking;
+  const rows = (r.items || []).filter((it) => {
+    if (rankOursOnly && !/한성/.test(it.brand || "")) return false;
+    if (!rankQuery) return true;
+    const s = ((it.name || it.title || "") + " " + (it.brand || "")).toLowerCase();
+    return s.includes(rankQuery);
+  });
+  $("#rankCount").textContent = rows.length + "개 표시 (전체 " + r.items.length + "개)";
+  $("#rankBody").replaceChildren(...(rows.length ? rows.map((it) => {
+    const isHansung = /한성/.test(it.brand || "");
+    return el("tr", { className: isHansung ? "hansung" : "" }, [
+      el("td", { textContent: it.rank == null ? "-" : it.rank + "위" }),
+      it.prevRank == null
+        ? el("td", {}, el("span", { className: it.isNew ? "newbadge" : "mute", textContent: it.isNew ? "신규" : "" }))
+        : el("td", { className: it.rankDelta > 0 ? "up" : it.rankDelta < 0 ? "down" : "mute", textContent: it.rankDelta > 0 ? "▲" + it.rankDelta : it.rankDelta < 0 ? "▼" + -it.rankDelta : "–" }),
+      el("td", { textContent: it.brand || "-", className: it.brand ? "" : "mute" }),
+      el("td", { className: "pname" }, el("a", { href: it.url || "https://item.gmarket.co.kr/Item?goodsCode=" + it.goodsCode, target: "_blank", rel: "noreferrer", textContent: (it.name || it.title || "").slice(0, 70) })),
+      el("td", { className: "num", textContent: it.price == null ? "-" : num(it.price) + "원" }),
+      el("td", { className: "num " + (it.soldDelta > 0 ? "up" : "mute"), textContent: it.soldDelta == null ? "—" : num(it.soldDelta) + "대" }),
+      el("td", { className: "num", textContent: it.salesCount == null ? "-" : num(it.salesCount) + "대" }),
+    ]);
+  }) : [el("tr", {}, el("td", { colSpan: 7, className: "mute", textContent: "조건에 맞는 상품이 없어요" }))]));
+}
+
+/* ── 화면별 그리기 */
+function viewHome() {
   const s = DATA.pairs.summary;
   const behind = Math.max(0, s.matched - s.cheapest);
-  $("#updatedAt").innerHTML = "";
-  $("#updatedAt").append("마지막 갱신 ", el("b", { textContent: String(DATA.generatedAt).slice(0, 16).replace("T", " ") }));
-
-  const app = $("#app");
-  app.className = "";
-  app.replaceChildren(
+  const risky = DATA.pairs.items.filter((i) => i.diffToMin > 0).sort((a, b) => b.diffToMin - a.diffToMin).slice(0, 5);
+  return [
+    el("div", { className: "page-head" }, el("div", {}, [
+      el("h1", { textContent: "현황" }),
+      el("div", { className: "page-sub", textContent: "한성컴퓨터와 같은 스펙 경쟁 상품의 가격·판매량을 매일 자동으로 모아요" }),
+    ])),
     el("div", { className: "stats" }, [
       ["한성 상품", s.ours + "개", "경쟁 상품 " + s.rivals + "개와 비교", ""],
       ["한성이 최저가", s.cheapest + "개", "비교 가능한 " + s.matched + "개 중", "good"],
@@ -299,63 +373,123 @@ function render() {
         el("div", { className: "sub", textContent: sub }),
       ])
     )),
+    el("div", { className: "page-head" }, el("div", {}, [
+      el("h1", { style: "font-size:17px", textContent: "가격 검토가 필요한 상품" }),
+      el("div", { className: "page-sub", textContent: "경쟁사 최저가보다 비싼 순서예요" }),
+    ])),
+    el("div", { className: "plist" }, risky.length
+      ? risky.map((i) => {
+          const c = productCard(i);
+          c.querySelector(".pcard-main").onclick = () => { expanded = i.goodsCode; tab = "pairs";
+            for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("on", b.dataset.tab === "pairs");
+            render(); };
+          return c;
+        })
+      : [el("div", { className: "empty", textContent: "경쟁사보다 비싼 상품이 없어요 👍" })]),
+  ];
+}
 
-    el("div", { className: "section-head" }, [
-      el("h2", { textContent: "가격 비교" }),
-      el("span", { className: "hint-text", textContent: "상품을 누르면 같은 스펙 경쟁 상품이 펼쳐져요" }),
-    ]),
+function viewPairs() {
+  const s = DATA.pairs.summary;
+  const behind = Math.max(0, s.matched - s.cheapest);
+  return [
+    el("div", { className: "page-head" }, el("div", {}, [
+      el("h1", { textContent: "가격 비교" }),
+      el("div", { className: "page-sub", textContent: "상품을 누르면 같은 스펙 경쟁 상품이 펼쳐져요 · 가격은 실구매가(쿠폰 적용) 기준" }),
+    ])),
     el("div", { className: "controls" }, [
-      el("button", { id: "fAll", className: "chip-btn on", textContent: "전체 " + s.ours, onclick: () => { filterMode = "all"; renderList(); } }),
-      el("button", { id: "fBest", className: "chip-btn", textContent: "한성이 최저가 " + s.cheapest, onclick: () => { filterMode = "best"; renderList(); } }),
-      el("button", { id: "fBehind", className: "chip-btn", textContent: "경쟁사가 더 쌈 " + behind, onclick: () => { filterMode = "behind"; renderList(); } }),
-      el("select", { id: "sortBox", onchange: renderList }, [
+      el("button", { id: "fAll", className: "chip-btn on", textContent: "전체 " + s.ours, onclick: () => { filterMode = "all"; renderPairList(); } }),
+      el("button", { id: "fBest", className: "chip-btn", textContent: "한성이 최저가 " + s.cheapest, onclick: () => { filterMode = "best"; renderPairList(); } }),
+      el("button", { id: "fBehind", className: "chip-btn", textContent: "경쟁사가 더 쌈 " + behind, onclick: () => { filterMode = "behind"; renderPairList(); } }),
+      el("select", { id: "sortBox", onchange: renderPairList }, [
         el("option", { value: "risk", textContent: "가격 차이 큰 순" }),
         el("option", { value: "pop", textContent: "인기 순위 순" }),
         el("option", { value: "price", textContent: "가격 낮은 순" }),
       ]),
-      el("input", { id: "searchBox", placeholder: "상품 검색", oninput: renderList }),
+      el("input", { id: "searchBox", placeholder: "상품 검색", oninput: renderPairList }),
     ]),
     el("div", { className: "plist", id: "plist" }),
-
-    DATA.ranking ? rankingSection() : el("span")
-  );
-  renderList();
+  ];
 }
 
-function rankingSection() {
+function viewRank() {
   const r = DATA.ranking;
-  return el("div", {}, [
-    el("div", { className: "section-head" }, [
-      el("h2", { textContent: "판매 순위 상위 " + r.items.length + "개" }),
-      el("span", { className: "hint-text", textContent: r.date + " (" + dow(r.date) + ") 기준" + (r.prevDate ? " · 판매 대수는 " + r.prevDate + " 이후 판 것" : "") + " · 초록 줄이 한성" }),
+  if (!r) return [el("div", { className: "empty", textContent: "아직 판매 순위 데이터가 없어요" })];
+  return [
+    el("div", { className: "page-head" }, el("div", {}, [
+      el("h1", { textContent: "판매 순위" }),
+      el("div", { className: "page-sub", textContent: r.date + " (" + dow(r.date) + ") 기준" + (r.prevDate ? " · 판매 대수는 " + r.prevDate + " 이후 판 것" : "") + " · 초록 줄이 한성" }),
+    ])),
+    el("div", { className: "controls" }, [
+      el("input", { id: "rankSearch", placeholder: "상품·판매자 검색", value: rankQuery,
+        oninput: (e) => { rankQuery = e.target.value.trim().toLowerCase(); renderRankTable(); } }),
+      el("button", { className: "chip-btn" + (rankOursOnly ? " on" : ""), textContent: "한성만 보기",
+        onclick: (e) => { rankOursOnly = !rankOursOnly; e.target.className = "chip-btn" + (rankOursOnly ? " on" : ""); renderRankTable(); } }),
+      el("span", { className: "mute", id: "rankCount" }),
     ]),
-    el("div", { className: "rank-panel" }, el("div", { className: "rank-scroll" }, el("table", {}, [
+    el("div", { className: "panel" }, el("div", { className: "scroll" }, el("table", {}, [
       el("thead", {}, el("tr", {}, [
         el("th", { textContent: "순위" }), el("th", { textContent: "변동" }), el("th", { textContent: "판매자" }), el("th", { textContent: "상품" }),
         el("th", { className: "num", textContent: "가격" }), el("th", { className: "num", textContent: "판매" }), el("th", { className: "num", textContent: "누적 판매" }),
       ])),
-      el("tbody", {}, r.items.map((it) => {
-        const isHansung = /한성/.test(it.brand || "");
-        return el("tr", { className: isHansung ? "hansung" : "" }, [
-          el("td", { textContent: it.rank == null ? "-" : it.rank + "위" }),
-          it.prevRank == null
-            ? el("td", {}, el("span", { className: it.isNew ? "newbadge" : "mute", textContent: it.isNew ? "신규" : "" }))
-            : el("td", { className: it.rankDelta > 0 ? "up" : it.rankDelta < 0 ? "down" : "mute", textContent: it.rankDelta > 0 ? "▲" + it.rankDelta : it.rankDelta < 0 ? "▼" + -it.rankDelta : "–" }),
-          el("td", { textContent: it.brand || "-", className: it.brand ? "" : "mute" }),
-          el("td", { className: "pname" }, el("a", { href: it.url || "https://item.gmarket.co.kr/Item?goodsCode=" + it.goodsCode, target: "_blank", rel: "noreferrer", textContent: (it.name || it.title || "").slice(0, 70) })),
-          el("td", { className: "num", textContent: it.price == null ? "-" : num(it.price) + "원" }),
-          el("td", { className: "num " + (it.soldDelta > 0 ? "up" : "mute"), textContent: it.soldDelta == null ? "—" : num(it.soldDelta) + "대" }),
-          el("td", { className: "num", textContent: it.salesCount == null ? "-" : num(it.salesCount) + "대" }),
-        ]);
-      })),
+      el("tbody", { id: "rankBody" }),
     ]))),
-  ]);
+  ];
 }
 
-fetch("data/dashboard.json?t=" + Date.now())
-  .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-  .then((d) => { DATA = d; render(); })
-  .catch((e) => { $("#app").textContent = "데이터를 불러오지 못했어요: " + e.message; });
+function render() {
+  const app = $("#app");
+  app.className = "";
+  app.replaceChildren(...(tab === "home" ? viewHome() : tab === "pairs" ? viewPairs() : viewRank()));
+  if (tab === "pairs") renderPairList();
+  if (tab === "rank") renderRankTable();
+}
+
+function start(data) {
+  DATA = data;
+  $("#cntPairs").textContent = DATA.pairs.summary.ours;
+  $("#cntRank").textContent = DATA.ranking ? DATA.ranking.items.length : "";
+  $("#sideFoot").textContent = "마지막 갱신\n" + String(DATA.generatedAt).slice(0, 16).replace("T", " ");
+  $("#sideFoot").style.whiteSpace = "pre-line";
+  $("#lock").hidden = true;
+  render();
+}
+
+/* ── 시작: 잠겨 있으면 비밀번호를 묻는다 */
+(async () => {
+  let payload;
+  try {
+    const res = await fetch("data/dashboard.json?t=" + Date.now());
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    payload = await res.json();
+  } catch (e) {
+    $("#app").textContent = "데이터를 불러오지 못했어요: " + e.message;
+    return;
+  }
+  if (!payload.encrypted) return start(payload);
+
+  const saved = localStorage.getItem("dashboard-pw");
+  if (saved) {
+    try { return start(await decryptPayload(payload, saved)); } catch { localStorage.removeItem("dashboard-pw"); }
+  }
+  $("#lock").hidden = false;
+  $("#pw").focus();
+  const tryUnlock = async () => {
+    const pw = $("#pw").value;
+    if (!pw) return;
+    $("#lockErr").textContent = "여는 중…";
+    try {
+      const data = await decryptPayload(payload, pw);
+      localStorage.setItem("dashboard-pw", pw);
+      start(data);
+    } catch {
+      $("#lockErr").textContent = "비밀번호가 맞지 않아요";
+      $("#pw").select();
+    }
+  };
+  $("#unlock").onclick = tryUnlock;
+  $("#pw").onkeydown = (e) => { if (e.key === "Enter") tryUnlock(); };
+})();
 </script>
 </body>
 </html>
