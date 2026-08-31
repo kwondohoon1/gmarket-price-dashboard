@@ -535,7 +535,13 @@ function start(data) {
     }
   };
   $("#unlock").onclick = tryUnlock;
-  $("#pw").onkeydown = (e) => { if (e.key === "Enter") tryUnlock(); };
+  // 엔터는 잠금 창 어디에 포커스가 있어도 먹게 창 전체에서 받는다
+  $("#lock").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.keyCode === 13) {
+      e.preventDefault();
+      tryUnlock();
+    }
+  });
 })();
 </script>
 </body>
