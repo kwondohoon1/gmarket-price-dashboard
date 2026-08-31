@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>지마켓 가격 모니터</title>
+<title>데스크탑 가격비교</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" />
 <style>
   :root {
@@ -113,6 +113,11 @@
   tr.hansung td { background: var(--ok-soft); }
   tr.hansung td:first-child { border-left: 3px solid var(--ok); }
   .up { color: var(--ok); } .down { color: var(--bad); } .mute { color: var(--faint); }
+  /* 표 칸의 둘째 줄(가격·요일). display:block 이 없으면 대수와 금액이 한 줄에 붙어 버린다 */
+  .subline { display: block; color: var(--faint); font-size: 11px; font-weight: 400; margin-top: 2px; }
+  .cellnum { font-weight: 600; }          /* 판매 대수 — 진하게 */
+  .cellnum.zero { font-weight: 400; color: var(--faint); }
+  td .subline { white-space: nowrap; }
   .newbadge { font-size: 11px; color: var(--warn); font-weight: 600; }
   .panel-title { font-size: 14px; font-weight: 700; padding: 12px 14px 10px; border-bottom: 1px solid var(--soft); }
   .panel-title .mute { font-weight: 400; font-size: 12px; }
@@ -149,8 +154,8 @@
 
 <aside id="side">
   <div class="brand">
-    <div class="brand-name">지마켓 가격 모니터</div>
-    <div class="brand-sub">조립PC 가격·스펙</div>
+    <div class="brand-name">데스크탑 가격비교</div>
+    <div class="brand-sub">지마켓 조립PC</div>
   </div>
   <nav id="tabs">
     <button data-tab="home" class="on">현황</button>
@@ -167,7 +172,7 @@
 <div id="lock" hidden>
   <div class="box">
     <h2>비밀번호를 입력해 주세요</h2>
-    <p>지마켓 가격 모니터 — 사내 열람용이에요.</p>
+    <p>데스크탑 가격비교 — 사내 열람용이에요.</p>
     <input type="password" id="pw" placeholder="비밀번호" autocomplete="current-password" />
     <button id="unlock">열기</button>
     <div class="err" id="lockErr"></div>
@@ -410,7 +415,7 @@ function renderSalesTable() {
         if (hour) {
           // 누적 대수와 직전 수집 대비 증가분, 그 아래 그때 가격
           const box = el("td", { className: "num" }, [
-            el("div", {}, [
+            el("div", { className: "cellnum" }, [
               document.createTextNode(cell.cumulative == null ? "-" : num(cell.cumulative) + "대"),
               cell.sold == null ? el("span") : el("span", {
                 className: cell.sold > 0 ? "up" : "mute",
@@ -422,8 +427,8 @@ function renderSalesTable() {
           return box;
         }
         const price = r.cellPrice ? r.cellPrice[c.key] : null;
-        const box = el("td", { className: "num " + (cell.sold > 0 ? "up" : "mute") }, [
-          document.createTextNode(cell.sold == null ? "—" : num(cell.sold) + "대"),
+        const box = el("td", { className: "num" }, [
+          el("div", { className: "cellnum" + (cell.sold > 0 ? "" : " zero"), textContent: cell.sold == null ? "—" : num(cell.sold) + "대" }),
         ]);
         if (price != null) box.append(el("span", { className: "subline", textContent: "최저 " + num(price) + "원" }));
         return box;
