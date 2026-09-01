@@ -109,7 +109,19 @@
   .rrow.ours:hover { background: #dcece3; }
   .rrow .caret { flex: 0 0 auto; color: var(--faint); font-size: 10px; }
   .rrow.open .caret { transform: rotate(180deg); }
-  .specbox { background: var(--card); border: 1px solid var(--line); border-radius: 10px; margin: 4px 0 8px 48px; padding: 12px 16px; }
+  .specbox { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; flex: 1 1 auto; min-width: 0; }
+  .specwrap { display: flex; gap: 12px; align-items: flex-start; margin: 4px 0 8px 48px; }
+  .specimg-box { flex: 0 0 300px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .specbox:only-child, .rivals > .specbox { margin: 4px 0 8px 48px; }
+  /* 판매 칸 — 최근 3일을 세 칸으로 */
+  .r-days { flex: 0 0 auto; display: flex; gap: 6px; }
+  .r-day { width: 86px; text-align: right; font-size: 12px; color: var(--muted); }
+  .r-day.mute { color: var(--faint); }
+  .r-cum { font-weight: 600; color: var(--text); }
+  .r-inc { font-size: 11px; }
+  .rhead .r-day { font-size: 11px; color: var(--faint); }
+  .rhead-row { padding-top: 0; padding-bottom: 2px; cursor: default; }
+  .rhead-row:hover { background: transparent; }
   .spec-line { display: flex; gap: 12px; align-items: flex-start; padding: 6px 0; font-size: 12.5px; }
   .spec-line + .spec-line { border-top: 1px solid var(--soft); }
   .spec-key { flex: 0 0 78px; color: var(--muted); font-weight: 600; font-size: 12px; padding-top: 2px; }
@@ -117,7 +129,7 @@
   .part { display: flex; gap: 8px; }
   .part-f { flex: 0 0 54px; color: var(--muted); }
   .chg .was { color: var(--muted); text-decoration: line-through; }
-  .specimg { max-width: 320px; max-height: 220px; border: 1px solid var(--line); border-radius: 8px; object-fit: contain; background: var(--soft); }
+  .specimg { width: 100%; max-height: 420px; border: 1px solid var(--line); border-radius: 8px; object-fit: contain; background: var(--soft); }
 
   /* ── 표 */
   .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
@@ -288,16 +300,30 @@ const FIELD_LABEL = { cpu: "CPU", mainboard: "메인보드", memory: "메모리"
 const detailOf = (code) => (DATA.details ? DATA.details[String(code)] : null) || {};
 let openSpec = null;   // 스펙을 펼쳐 둔 상품코드
 
-/** 최근 3일 판매 대수 — "8/30 0대 · 8/31 2대" 처럼 날짜를 붙인다 */
-function recentSalesText(row) {
+/** 최근 3일 판매 칸 — 날짜마다 "누적 (+그날 판매)" */
+function salesCells(row) {
   const dates = DATA.pairs.salesDates || [];
-  const parts = [];
-  for (const d of dates) {
-    const v = row.dailySales ? row.dailySales[d] : null;
-    if (v == null) continue;
-    parts.push(md(d).replace(/^0/, "") + " " + num(v) + "대");
-  }
-  return parts.length ? parts.join(" · ") : null;
+  return el("div", { className: "r-days" }, dates.map((d) => {
+    const cum = row.dailyCum ? row.dailyCum[d] : null;
+    const sold = row.dailySales ? row.dailySales[d] : null;
+    if (cum == null && sold == null) return el("div", { className: "r-day mute", textContent: "—" });
+    const box = el("div", { className: "r-day" }, [
+      el("span", { className: "r-cum", textContent: cum == null ? "-" : num(cum) }),
+    ]);
+    if (sold != null) {
+      box.append(el("span", { className: "r-inc " + (sold > 0 ? "up" : "mute"),
+                              textContent: " (" + (sold > 0 ? "+" : "") + num(sold) + ")" }));
+    }
+    return box;
+  }));
+}
+
+/** 판매 칸 위에 붙일 날짜 머리 */
+function salesHeader() {
+  const dates = DATA.pairs.salesDates || [];
+  if (!dates.length) return el("span");
+  return el("div", { className: "r-days rhead" }, dates.map((d) =>
+    el("div", { className: "r-day", textContent: md(d).replace(/^0/, "") })));
 }
 
 /** 한 상품의 스펙 상세 — 우리가 정리한 부품, 스펙 이미지, 최근 스펙 변경 */
@@ -356,14 +382,17 @@ function specPanel(row) {
     ]));
   }
 
-  if (d.specImage) {
-    box.append(el("div", { className: "spec-line" }, [
-      el("span", { className: "spec-key", textContent: "스펙 이미지" }),
+  // 글과 이미지를 위아래가 아니라 좌우로 놓는다
+  if (!d.specImage) return box;
+  return el("div", { className: "specwrap" }, [
+    box,
+    el("div", { className: "specimg-box" }, [
+      el("div", { className: "spec-key", textContent: "스펙 이미지" }),
       el("a", { href: d.specImage, target: "_blank", rel: "noreferrer" },
         el("img", { className: "specimg", src: d.specImage, alt: "스펙 이미지", loading: "lazy" })),
-    ]));
-  }
-  return box;
+      el("div", { className: "mute", style: "font-size:11px;margin-top:4px", textContent: "누르면 원본 크기로" }),
+    ]),
+  ]);
 }
 
 function rivalList(item) {
@@ -372,9 +401,17 @@ function rivalList(item) {
   const dates = DATA.pairs.salesDates || [];
   const wrap = el("div", { className: "rivals" });
   wrap.append(el("div", { className: "rivals-note", textContent:
-    "같은 스펙 " + rows.length + "개 상품 — 싼 순서" +
-    (dates.length ? " · 최근 판매 = " + dates.map(md).join(" · ") : "") +
-    " · 줄을 누르면 스펙이 펼쳐져요" }));
+    "같은 스펙 " + rows.length + "개 상품 — 싼 순서 · 줄을 누르면 스펙이 펼쳐져요" +
+    (dates.length ? " · 판매 칸은 그날까지 누적 (그날 판 대수)" : "") }));
+  if (dates.length) {
+    wrap.append(el("div", { className: "rrow rhead-row" }, [
+      el("div", { className: "r-rank", style: "visibility:hidden" }),
+      el("div", { className: "r-info" }),
+      salesHeader(),
+      el("div", { className: "r-price" }),
+      el("div", { className: "caret", style: "visibility:hidden", textContent: "▾" }),
+    ]));
+  }
 
   for (let idx = 0; idx < rows.length; idx++) {
     const m = rows[idx];
@@ -387,11 +424,6 @@ function rivalList(item) {
         : el("span", { className: "r-diff " + (m.diff > 0 ? "cheap" : "exp"),
                        textContent: (m.diff > 0 ? "(-" : "(+") + num(Math.abs(m.diff)) + ")" });
 
-    const sales = [];
-    const recent = recentSalesText(m);
-    if (recent) sales.push(recent);
-    const cumulative = m.salesCount != null ? m.salesCount : m.popSales;
-    if (cumulative != null) sales.push("누적 " + num(cumulative) + "대");
 
     const row = el("div", { className: "rrow" + (m.ours ? " ours" : "") + (openSpec === m.goodsCode ? " open" : "") }, [
       el("div", { className: "r-rank", textContent: m.price == null ? "-" : (idx + 1) + "위" }),
@@ -406,7 +438,7 @@ function rivalList(item) {
                             onclick: (e) => e.stopPropagation() })
                 : document.createTextNode(m.title)),
       ]),
-      el("div", { className: "r-sales" }, sales.map((t) => el("div", { textContent: t }))),
+      salesCells(m),
       el("div", { className: "r-price" }, [
         el("b", { textContent: won(m.price) }),
         d.payment != null && m.price != null && d.payment < m.price
