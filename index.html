@@ -57,6 +57,9 @@
   .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
   .chip-btn { border: 1px solid #d8d4ca; background: var(--card); color: #55524a; font: inherit; font-size: 13px; padding: 7px 14px; border-radius: 999px; cursor: pointer; }
   .chip-btn.on { background: #24221d; border-color: #24221d; color: #ffffff; font-weight: 600; }
+  .chip-btn.small { padding: 6px 11px; font-size: 12px; }
+  .range { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .range input[type="date"] { font: inherit; font-size: 13px; padding: 7px 10px; border: 1px solid #d8d4ca; border-radius: 10px; background: var(--card); color: var(--text); }
   .controls input, .controls select { font: inherit; font-size: 13px; padding: 8px 12px; border: 1px solid #d8d4ca; border-radius: 10px; background: var(--card); color: var(--text); }
 
   /* ── 상품 카드 */
@@ -358,6 +361,8 @@ function renderPairList() {
 
 let salesMode = "hour";      // hour = 시간대별, day = 일자별
 let salesDate = "";          // 시간대별에서 보고 있는 날짜
+let dayFrom = "";            // 일자별 기간 시작
+let dayTo = "";              // 일자별 기간 끝
 let salesBrand = "";
 let salesQuery = "";
 
@@ -370,10 +375,36 @@ function salesTable() {
   return s.hourly ? s.hourly[salesDate] : null;
 }
 
-function salesRows(t) {
-  // 순위는 필터와 무관하게 합계 기준으로 먼저 매긴다 (필터를 걸어도 번호가 흔들리지 않게)
-  const ranked = (t.rows || []).map((r, i) => ({ r: r, no: i + 1 }));
-  return ranked.filter(function (x) {
+/** 일자별에서 지금 고른 기간에 드는 열만 (시간대별은 그날 전체) */
+function visibleColumns(t) {
+  const cols = t.columns || [];
+  if (salesMode !== "day") return cols;
+  return cols.filter((c) => (!dayFrom || c.key >= dayFrom) && (!dayTo || c.key <= dayTo));
+}
+
+/**
+ * 표에 그릴 줄. 일자별은 고른 기간의 판매 합계로 순위를 다시 매긴다
+ * (기간을 바꿨는데 순위가 그대로면 기간을 고른 의미가 없다).
+ */
+function salesRows(t, cols) {
+  let list;
+  if (salesMode === "day") {
+    list = (t.rows || [])
+      .map((r) => {
+        let sum = 0;
+        for (const c of cols) {
+          const cell = r.cells ? r.cells[c.key] : null;
+          if (cell && cell.sold > 0) sum += cell.sold;
+        }
+        return { r: r, sum: sum };
+      })
+      .filter((x) => x.sum > 0)
+      .sort((a, b) => b.sum - a.sum)
+      .map((x, i) => ({ r: x.r, no: i + 1, sum: x.sum }));
+  } else {
+    list = (t.rows || []).map((r, i) => ({ r: r, no: i + 1, sum: r.total }));
+  }
+  return list.filter(function (x) {
     if (salesBrand && (x.r.brand || "") !== salesBrand) return false;
     if (!salesQuery) return true;
     return ((x.r.title || "") + " " + (x.r.brand || "")).toLowerCase().indexOf(salesQuery) !== -1;
@@ -383,13 +414,13 @@ function salesRows(t) {
 function renderSalesTable() {
   const t = salesTable();
   if (!t) return;
-  const cols = t.columns || [];
-  const rows = salesRows(t);
+  const cols = visibleColumns(t);
+  const rows = salesRows(t, cols);
   const hour = salesMode === "hour";
 
   $("#salesMeta").textContent = hour
     ? t.date + " · 상품 " + rows.length + "개 · 시간대별 판매 대수 (" + cols.length + "회 수집)"
-    : t.from + " ~ " + t.to + " · 상품 " + rows.length + "개 · 합계 기준 순위";
+    : (dayFrom || t.from) + " ~ " + (dayTo || t.to) + " · 수집 " + cols.length + "일 · 상품 " + rows.length + "개 · 기간 판매 합계 순";
 
   $("#salesHead").replaceChildren(el("tr", {}, [
     el("th", { textContent: "순위" }),
@@ -433,7 +464,7 @@ function renderSalesTable() {
         if (price != null) box.append(el("span", { className: "subline", textContent: "최저 " + num(price) + "원" }));
         return box;
       }),
-      el("td", { className: "num" }, el("b", { textContent: num(r.total) + "대" })),
+      el("td", { className: "num" }, el("b", { textContent: num(x.sum) + "대" })),
     ]);
   }) : [el("tr", {}, el("td", { colSpan: cols.length + 4, className: "mute", textContent: "조건에 맞는 상품이 없어요" }))]));
 }
@@ -499,6 +530,52 @@ function viewPairs() {
   ];
 }
 
+/** 일자별 기간 고르기 — 날짜 두 칸 + 자주 쓰는 기간 버튼 */
+function dayRangePicker(daily) {
+  const all = daily.dates || (daily.columns || []).map((c) => c.key);
+  const first = all[0], last = all[all.length - 1];
+  if (!dayFrom) dayFrom = all[Math.max(0, all.length - 14)] || first;
+  if (!dayTo) dayTo = last;
+
+  const box = el("span", { className: "range" });
+  const mk = (value, on) => {
+    const i = el("input", { type: "date", value: value, min: first, max: last });
+    i.onchange = () => { on(i.value); renderSalesTable(); refreshQuickButtons(); };
+    return i;
+  };
+  const fromInput = mk(dayFrom, (v) => { dayFrom = v; if (dayTo && v > dayTo) dayTo = v; });
+  const toInput = mk(dayTo, (v) => { dayTo = v; if (dayFrom && v < dayFrom) dayFrom = v; });
+
+  // 자주 쓰는 기간 — 실제로 수집된 날짜 기준으로 뒤에서 N개
+  // 수집이 빠진 날이 있어서 "7일"은 달력 7일이 아니라 "수집한 날 7개"를 뜻한다
+  const quick = [["최근 7일치", 7], ["14일치", 14], ["30일치", 30], ["전체", 0]];
+  const btns = quick.map(([label, n]) =>
+    el("button", {
+      className: "chip-btn small",
+      textContent: label,
+      onclick: () => {
+        dayFrom = n > 0 ? all[Math.max(0, all.length - n)] : first;
+        dayTo = last;
+        fromInput.value = dayFrom;
+        toInput.value = dayTo;
+        renderSalesTable();
+        refreshQuickButtons();
+      },
+    })
+  );
+  function refreshQuickButtons() {
+    quick.forEach(([label, n], idx) => {
+      const wantFrom = n > 0 ? all[Math.max(0, all.length - n)] : first;
+      btns[idx].className = "chip-btn small" + (dayFrom === wantFrom && dayTo === last ? " on" : "");
+    });
+  }
+  refreshQuickButtons();
+
+  box.append(el("span", { className: "mute", textContent: "기간 " }), fromInput,
+             el("span", { className: "mute", textContent: " ~ " }), toInput, ...btns);
+  return box;
+}
+
 function viewRank() {
   const sales = DATA.sales;
   if (!sales || !sales.daily) return [el("div", { className: "empty", textContent: "아직 판매량 데이터가 없어요" })];
@@ -508,7 +585,7 @@ function viewRank() {
   return [
     el("div", { className: "page-head" }, el("div", {}, [
       el("h1", { textContent: "판매량 추이" }),
-      el("div", { className: "page-sub", textContent: "시간대별 판매량과 급상승 상품을 순위로 봅니다 · 초록 줄이 한성" }),
+      el("div", { className: "page-sub", textContent: "시간대별 판매량과 급상승 상품을 순위로 봅니다 · 일자별은 기간을 골라 그 기간 판매 합계로 순위를 매깁니다 · 초록 줄이 한성" }),
     ])),
     el("div", { className: "controls" }, [
       el("select", {
@@ -521,7 +598,7 @@ function viewRank() {
         ? el("select", { onchange: (e) => { salesDate = e.target.value; renderSalesTable(); } },
             [...hourDates].reverse().map((d, i) =>
               el("option", { value: d, textContent: d + (i === 0 ? " (최신)" : ""), selected: d === salesDate })))
-        : el("span", { className: "mute", textContent: sales.daily.from + " ~ " + sales.daily.to }),
+        : dayRangePicker(sales.daily),
       el("select", { onchange: (e) => { salesBrand = e.target.value; renderSalesTable(); } }, [
         el("option", { value: "", textContent: "전체 브랜드" }),
         ...(sales.brands || []).map((b) => el("option", { value: b, textContent: b, selected: b === salesBrand })),
