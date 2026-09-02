@@ -221,6 +221,13 @@
   .fresh-row.good .fresh-bar i { background: var(--brand); }
   .fresh-num { flex: 0 0 56px; text-align: right; font-variant-numeric: tabular-nums; }
   .table-note { font-size: 11.5px; color: var(--faint); margin: 6px 2px 0; line-height: 1.55; }
+  /* 하이마트 — 판매 대수 자리에 순위 변동 */
+  .delta { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .delta.up { color: var(--ok); }
+  .delta.down { color: var(--bad); }
+  .delta.same, .delta.mute { color: var(--faint); font-weight: 400; }
+  .delta.new { color: var(--warn); }
+  .hm-title { max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* 언제 긁어온 값인지 */
   .when { display: block; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; margin-top: 3px; }
   .when.stale { color: var(--warn); }
@@ -282,6 +289,7 @@
     <button data-tab="home" class="on">현황</button>
     <button data-tab="pairs">가격 비교 <span class="count" id="cntPairs"></span></button>
     <button data-tab="rank">판매 순위 <span class="count" id="cntRank"></span></button>
+    <button data-tab="himart">하이마트 <span class="count" id="cntHimart"></span></button>
     <button data-tab="sellers">업체 순위</button>
     <button data-tab="ideas">추천 상품 <span class="count" id="cntIdeas"></span></button>
     <button data-tab="health">점검 <span class="count" id="cntHealth"></span></button>
@@ -923,6 +931,128 @@ function viewRank() {
   ];
 }
 
+/* ═══════════ 하이마트 ═══════════ */
+let hmBrand = "";
+let hmQuery = "";
+let hmDate = "";
+
+/** 하이마트는 판매 대수를 안 주므로 순위 변동으로 보여 준다 */
+function rankDeltaCell(it) {
+  if (it.isNew) return el("span", { className: "delta new", textContent: "새로" });
+  if (it.delta == null) return el("span", { className: "delta mute", textContent: "—" });
+  if (it.delta === 0) return el("span", { className: "delta same", textContent: "제자리" });
+  return el("span", { className: "delta " + (it.delta > 0 ? "up" : "down"),
+    textContent: (it.delta > 0 ? "▲" : "▼") + Math.abs(it.delta) });
+}
+
+function hmRows() {
+  const h = DATA.himart;
+  const date = hmDate || h.latestDate;
+  return h.items
+    .map((it) => ({ ...it, shown: it.rank[date] == null ? null : it.rank[date] }))
+    .filter((it) => {
+      if (it.shown == null) return false;
+      if (hmBrand && (it.brand || "기타") !== hmBrand) return false;
+      if (hmQuery && ((it.title || "") + " " + (it.brand || "")).toLowerCase().indexOf(hmQuery) === -1) return false;
+      return true;
+    })
+    .sort((a, b) => a.shown - b.shown);
+}
+
+function renderHimart() {
+  const h = DATA.himart;
+  const date = hmDate || h.latestDate;
+  const rows = hmRows();
+  $("#hmMeta").textContent = md(date) + " 기준 · " + num(rows.length) + "개" +
+    (h.prevDate && date === h.latestDate ? " · 변동은 " + md(h.prevDate) + " 대비" : "");
+
+  $("#hmRows").replaceChildren(...rows.map((it) =>
+    el("tr", { className: /한성/.test(it.brand) ? "hansung" : "" }, [
+      el("td", { className: "num" }, el("b", { textContent: it.shown })),
+      el("td", {}, rankDeltaCell(it)),
+      el("td", { textContent: it.brand || "-" }),
+      el("td", { className: "hm-title" },
+        it.url ? el("a", { href: it.url, target: "_blank", rel: "noreferrer", textContent: it.title })
+               : document.createTextNode(it.title)),
+      el("td", { className: "num", textContent: it.price[date] != null ? won(it.price[date]) : "-" }),
+      el("td", { className: "num mute", textContent: it.benefit != null ? num(it.benefit) + "원" : "" }),
+      el("td", { className: "num mute", textContent: it.review ? num(it.review) : "" }),
+    ])
+  ));
+}
+
+function viewHimart() {
+  const h = DATA.himart;
+  if (!h || !h.items.length) {
+    return [el("div", { className: "empty", textContent: "하이마트 순위가 아직 없어요" })];
+  }
+  const brands = [...new Set(h.items.map((i) => i.brand || "기타"))].sort();
+  const best = h.brands[0];
+
+  return [
+    el("div", { className: "page-head" }, el("div", {}, [
+      el("h1", { textContent: "하이마트 순위" }),
+      el("div", { className: "page-sub", textContent:
+        "롯데하이마트 조립PC 판매량순 " + num(h.total) + "개 중 상위 " + num(h.items.length) + "개 · " +
+        "하이마트는 판매 대수를 공개하지 않아서 대수 대신 순위로 봅니다" }),
+    ])),
+
+    el("div", { className: "section-note", textContent: "업체별 (오늘 순위 기준)" }),
+    el("div", { className: "panel" }, el("div", { className: "scroll" }, el("table", {}, [
+      el("thead", {}, el("tr", {}, [
+        el("th", { textContent: "업체" }),
+        el("th", { className: "num", textContent: "100위 안" }),
+        el("th", { className: "num", textContent: "올라온 상품" }),
+        el("th", { className: "num", textContent: "최고 순위" }),
+        el("th", { className: "num", textContent: "평균 순위" }),
+      ])),
+      el("tbody", {}, h.brands.map((b) => el("tr", { className: /한성/.test(b.name) ? "hansung" : "" }, [
+        el("td", {}, el("b", { textContent: b.name })),
+        el("td", { className: "num " + (b.top100 ? "up" : "mute") }, el("b", { textContent: num(b.top100) })),
+        el("td", { className: "num mute", textContent: num(b.count) }),
+        el("td", { className: "num", textContent: b.best + "위" }),
+        el("td", { className: "num mute", textContent: b.avg + "위" }),
+      ]))),
+    ]))),
+
+    el("div", { className: "controls" }, [
+      h.dates.length > 1
+        ? el("select", { onchange: (e) => { hmDate = e.target.value; renderHimart(); } },
+            [...h.dates].reverse().map((d) => el("option", { value: d, textContent: md(d), selected: d === (hmDate || h.latestDate) })))
+        : el("span", { className: "mute", textContent: md(h.latestDate) + " 첫 수집" }),
+      el("select", { onchange: (e) => { hmBrand = e.target.value; renderHimart(); } }, [
+        el("option", { value: "", textContent: "전체 업체" }),
+        ...brands.map((b) => el("option", { value: b, textContent: b, selected: b === hmBrand })),
+      ]),
+      el("input", { placeholder: "상품명 검색", value: hmQuery,
+        oninput: (e) => { hmQuery = e.target.value.trim().toLowerCase(); renderHimart(); } }),
+    ]),
+
+    el("div", { className: "panel" }, [
+      el("div", { className: "panel-title" }, [
+        document.createTextNode("판매량순 순위 "),
+        el("span", { className: "mute", id: "hmMeta" }),
+      ]),
+      el("div", { className: "scroll" }, el("table", {}, [
+        el("thead", {}, el("tr", {}, [
+          el("th", { className: "num", textContent: "순위" }),
+          el("th", { textContent: "변동" }),
+          el("th", { textContent: "업체" }),
+          el("th", { textContent: "상품" }),
+          el("th", { className: "num", textContent: "판매가" }),
+          el("th", { className: "num", textContent: "최대혜택가" }),
+          el("th", { className: "num", textContent: "리뷰" }),
+        ])),
+        el("tbody", { id: "hmRows" }),
+      ])),
+    ]),
+
+    el("div", { className: "table-note", textContent:
+      "하이마트 목록의 기본 정렬이 판매량순이라, 목록에 놓인 차례가 곧 판매 순위입니다. " +
+      "정확한 판매 대수는 하이마트가 공개하지 않아 알 수 없습니다." }),
+  ];
+}
+
 /* ═══════════ 업체 순위 ═══════════ */
 const SERIES_COLORS = ["#23795a", "#b3382c", "#2c5f8a", "#a96b1f", "#7a5ea8", "#3f8f7a", "#c2557a", "#6b7a3f", "#8a6a4f", "#4f6f9a", "#9a4f7a", "#5a7f4f"];
 let sellerMetric = "sold";      // sold | rank | products
@@ -1453,12 +1583,14 @@ function render() {
     tab === "home" ? viewHome() :
     tab === "pairs" ? viewPairs() :
     tab === "rank" ? viewRank() :
+    tab === "himart" ? viewHimart() :
     tab === "sellers" ? viewSellers() :
     tab === "ideas" ? viewIdeas() :
     viewHealth();
   app.replaceChildren(...view);
   if (tab === "pairs") renderPairList();
   if (tab === "rank") renderSalesTable();
+  if (tab === "himart") renderHimart();
   if (tab === "sellers") renderSellers();
   if (tab === "ideas") renderIdeas();
 }
@@ -1467,6 +1599,7 @@ function start(data) {
   DATA = data;
   $("#cntPairs").textContent = DATA.pairs.summary.ours;
   $("#cntRank").textContent = DATA.sales && DATA.sales.daily ? DATA.sales.daily.rows.length : "";
+  $("#cntHimart").textContent = DATA.himart ? DATA.himart.items.length : "";
   $("#cntIdeas").textContent = DATA.recommend ? (DATA.recommend.items || []).length : "";
   // 점검 뱃지는 "문제 개수" — 이상 없으면 아무것도 안 띄운다
   const bad = DATA.health ? DATA.health.issues.filter((i) => i.level !== "ok").length + liveIssues().length : 0;
