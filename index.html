@@ -160,8 +160,15 @@
   .legend .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
   .section-note { font-size: 12px; color: var(--muted); margin: 18px 0 8px 2px; }
   /* 추천 상품 */
-  .idea-days { flex: 0 0 auto; display: flex; gap: 6px; }
-  .idea-days .r-day { width: 52px; }
+  .idea-days { flex: 0 1 auto; display: flex; gap: 6px; justify-content: flex-end; }
+  .idea-days .r-day { width: 46px; }
+  /* 제목이 글자 단위로 세로로 접히지 않게 최소 너비를 준다 */
+  #ideaList .p-info { min-width: 190px; }
+  /* 폭이 좁으면 날짜 줄을 카드 아래로 통째로 내린다 */
+  @media (max-width: 1180px) {
+    #ideaList .pcard-main { flex-wrap: wrap; row-gap: 10px; }
+    .idea-days { order: 9; width: 100%; flex: 1 0 100%; justify-content: flex-start; }
+  }
   .panel-title { font-size: 14px; font-weight: 700; padding: 12px 14px 10px; border-bottom: 1px solid var(--soft); }
   .panel-title .mute { font-weight: 400; font-size: 12px; }
   .empty { text-align: center; color: var(--faint); padding: 40px 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
