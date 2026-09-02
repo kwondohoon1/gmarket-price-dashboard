@@ -220,6 +220,7 @@
   .fresh-bar i { display: block; height: 100%; background: var(--warn); opacity: 0.55; }
   .fresh-row.good .fresh-bar i { background: var(--brand); }
   .fresh-num { flex: 0 0 56px; text-align: right; font-variant-numeric: tabular-nums; }
+  .table-note { font-size: 11.5px; color: var(--faint); margin: 6px 2px 0; line-height: 1.55; }
   /* 언제 긁어온 값인지 */
   .when { display: block; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; margin-top: 3px; }
   .when.stale { color: var(--warn); }
@@ -1196,6 +1197,14 @@ function dur(ms) {
   return Math.floor(min / 60) + "시간 " + (min % 60) + "분";
 }
 
+/** 3007912 → "3.0M", 41616 → "42K" */
+function tokenText(n) {
+  if (n == null) return "—";
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+  if (n >= 1000) return Math.round(n / 1000) + "K";
+  return String(n);
+}
+
 /** "N시간 전" / "N일 전" */
 function agoText(iso) {
   const h = hoursAgo(iso);
@@ -1309,7 +1318,7 @@ function viewHealth() {
     el("thead", {}, el("tr", {}, [
       el("th", { textContent: "시각" }), el("th", { textContent: "상태" }), el("th", { textContent: "단계" }),
       el("th", { className: "num", textContent: "걸린 시간" }), el("th", { className: "num", textContent: "읽은 사진" }),
-      el("th", { className: "num", textContent: "든 돈" }), el("th", { textContent: "메모" }),
+      el("th", { className: "num", textContent: "쓴 토큰" }), el("th", { textContent: "메모" }),
     ])),
     el("tbody", {}, h.specRuns.map((r) => {
       const took = r.startedAt && r.finishedAt ? Date.parse(r.finishedAt) - Date.parse(r.startedAt) : null;
@@ -1320,11 +1329,18 @@ function viewHealth() {
           el("span", { className: "step " + (s.ok ? "ok" : "bad"), title: STEP_NAME[s.step] || s.step, textContent: STEP_NAME[s.step] || s.step })))),
         el("td", { className: "num mute", textContent: dur(took) }),
         el("td", { className: "num", textContent: r.created == null ? "—" : num(r.created) }),
-        el("td", { className: "num mute", textContent: r.costUsd == null ? "—" : "$" + r.costUsd.toFixed(2) }),
+        el("td", { className: "num mute", title: r.tokens
+          ? "입력 " + num(r.tokens.input) + " · 출력 " + num(r.tokens.output) +
+            " · 캐시 읽기 " + num(r.tokens.cacheRead) + " · 캐시 만들기 " + num(r.tokens.cacheCreate)
+          : "", textContent: tokenText(r.tokens ? r.tokens.total : null) }),
         el("td", { className: "mute", textContent: (r.rateLimited ? "사용량 제한 대기 " : "") + (r.reason || "") }),
       ]);
     })),
   ]))));
+
+  out.push(el("div", { className: "table-note", textContent:
+    "쓴 토큰은 사진을 읽으며 주고받은 글자 수예요. 구독 좌석이라 회차마다 돈이 빠져나가지는 않고, " +
+    "대신 이 토큰이 사용량 한도를 먹습니다. 숫자에 마우스를 올리면 입력·출력·캐시로 나눠 보여요." }));
 
   const pf = h.products;
   out.push(el("div", { className: "section-note", textContent: "상품 가격을 마지막으로 받아온 때 (모두 " + num(pf.total) + "개)" }));
