@@ -187,6 +187,10 @@
   .legend-item.off { opacity: 0.35; text-decoration: line-through; }
   .legend .swatch { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
   .section-note { font-size: 12px; color: var(--muted); margin: 18px 0 8px 2px; }
+  /* 언제 긁어온 값인지 */
+  .when { display: block; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; margin-top: 3px; }
+  .when.stale { color: var(--warn); }
+  .when.stale b { font-weight: 600; }
   @media (max-width: 900px) {
     .s-name { flex-basis: 110px; }
     .s-sub:nth-of-type(n+2), .i-sub { display: none; }
@@ -278,6 +282,40 @@ const DOW = ["일", "월", "화", "수", "목", "금", "토"];
 const dow = (d) => (d ? DOW[new Date(d + "T00:00:00Z").getUTCDay()] : "");
 const BRAND_NAME = { ihansung: "한성컴퓨터", perflab: "퍼플랩", CYNEX1314: "씨넥스", assacom2: "아싸컴", preflow01: "프리플로우", seorincni: "서린씨앤아이" };
 const seller = (k) => BRAND_NAME[k] || k || "-";
+/* ── 수집 시각 ── */
+const STALE_HOURS = 36; // 이만큼 지나면 "오래된 값"으로 본다 (하루 두 번 수집 기준)
+
+/** "2026-09-02T19:05:20+09:00" → "9/2 19:05" */
+function whenText(iso) {
+  if (!iso) return "";
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return "";
+  return Number(m[2]) + "/" + Number(m[3]) + " " + m[4] + ":" + m[5];
+}
+
+/** 지금으로부터 몇 시간 전인지 (못 읽으면 null) */
+function hoursAgo(iso) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return isNaN(t) ? null : (Date.now() - t) / 3600000;
+}
+
+/** 오래됐으면 "· 21일 전" 처럼 덧붙인다 */
+function staleText(iso) {
+  const h = hoursAgo(iso);
+  if (h == null || h < STALE_HOURS) return "";
+  const days = Math.floor(h / 24);
+  return days >= 1 ? days + "일 전" : Math.floor(h) + "시간 전";
+}
+
+/** 줄 끝에 붙이는 "9/2 19:05 수집" 조각 */
+function collectedTag(iso, extraClass) {
+  const stale = staleText(iso);
+  return el("span", { className: "when" + (stale ? " stale" : "") + (extraClass ? " " + extraClass : "") },
+    [document.createTextNode(whenText(iso) + " 수집"),
+     ...(stale ? [el("b", { textContent: " " + stale })] : [])]);
+}
+
 const mdShort = (d) => md(d).replace(/^0/, "").replace("/0", "/");
 const gpuText = (spec) => {
   if (!spec || !spec.gpu) return null;
@@ -510,6 +548,7 @@ function rivalList(item) {
           ? el("span", { className: "r-max", textContent: "최대 할인 " + num(d.payment) + "원" })
           : el("span"),
         diffEl,
+        collectedTag(m.collectedAt),
       ]),
       el("div", { className: "caret", textContent: "▾" }),
     ]);
@@ -544,6 +583,7 @@ function productCard(i) {
       el("div", { className: "p-price", textContent: won(i.price) }),
       el("span", { className: "verdict " + v.cls, textContent: v.text }),
       meta ? el("div", { className: "p-meta", textContent: meta }) : el("span"),
+      collectedTag(i.collectedAt),
     ]),
     el("div", { className: "caret", textContent: "▼" }),
   ]);
@@ -724,13 +764,28 @@ function viewHome() {
   ];
 }
 
+/** 이 화면 가격들을 언제 긁어왔는지 한 줄 요약 */
+function collectedSummary() {
+  const times = [];
+  for (const i of DATA.pairs.items) {
+    if (i.collectedAt) times.push(i.collectedAt);
+    for (const m of i.matches) if (m.collectedAt) times.push(m.collectedAt);
+  }
+  if (!times.length) return "수집 시각 없음";
+  times.sort();
+  const stale = times.filter((t) => staleText(t)).length;
+  return "마지막 수집 " + whenText(times[times.length - 1]) +
+    (stale ? " · 하루 반 넘게 다시 못 잡은 오래된 값 " + stale + "개(주황색)" : "");
+}
+
 function viewPairs() {
   const s = DATA.pairs.summary;
   const behind = Math.max(0, s.matched - s.cheapest);
   return [
     el("div", { className: "page-head" }, el("div", {}, [
       el("h1", { textContent: "가격 비교" }),
-      el("div", { className: "page-sub", textContent: "상품을 누르면 같은 스펙 경쟁 상품이 펼쳐져요 · 가격은 실구매가(쿠폰 적용) 기준" }),
+      el("div", { className: "page-sub", textContent:
+        "상품을 누르면 같은 스펙 경쟁 상품이 펼쳐져요 · 가격은 실구매가(쿠폰 적용) 기준 · " + collectedSummary() }),
     ])),
     el("div", { className: "controls" }, [
       el("button", { id: "fAll", className: "chip-btn on", textContent: "전체 " + s.ours, onclick: () => { filterMode = "all"; renderPairList(); } }),
