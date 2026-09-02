@@ -149,6 +149,19 @@
   .cellnum.zero { font-weight: 400; color: var(--faint); }
   td .subline { white-space: nowrap; }
   .newbadge { font-size: 11px; color: var(--warn); font-weight: 600; }
+  /* 업체별 추이 그래프 */
+  .chart { width: 100%; height: auto; display: block; }
+  .chart .axis { font-size: 11px; fill: var(--faint); font-family: inherit; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .legend-item { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line);
+    background: var(--card); color: #55524a; font: inherit; font-size: 12px; padding: 4px 10px;
+    border-radius: 999px; cursor: pointer; }
+  .legend-item.off { opacity: 0.4; text-decoration: line-through; }
+  .legend .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .section-note { font-size: 12px; color: var(--muted); margin: 18px 0 8px 2px; }
+  /* 추천 상품 */
+  .idea-days { flex: 0 0 auto; display: flex; gap: 6px; }
+  .idea-days .r-day { width: 52px; }
   .panel-title { font-size: 14px; font-weight: 700; padding: 12px 14px 10px; border-bottom: 1px solid var(--soft); }
   .panel-title .mute { font-weight: 400; font-size: 12px; }
   .empty { text-align: center; color: var(--faint); padding: 40px 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
@@ -191,6 +204,8 @@
     <button data-tab="home" class="on">현황</button>
     <button data-tab="pairs">가격 비교 <span class="count" id="cntPairs"></span></button>
     <button data-tab="rank">판매 순위 <span class="count" id="cntRank"></span></button>
+    <button data-tab="sellers">업체별 추이</button>
+    <button data-tab="ideas">추천 상품 <span class="count" id="cntIdeas"></span></button>
   </nav>
   <div class="side-foot" id="sideFoot"></div>
 </aside>
@@ -223,11 +238,21 @@ const DOW = ["일", "월", "화", "수", "목", "금", "토"];
 const dow = (d) => (d ? DOW[new Date(d + "T00:00:00Z").getUTCDay()] : "");
 const BRAND_NAME = { ihansung: "한성컴퓨터", perflab: "퍼플랩", CYNEX1314: "씨넥스", assacom2: "아싸컴", preflow01: "프리플로우", seorincni: "서린씨앤아이" };
 const seller = (k) => BRAND_NAME[k] || k || "-";
+const mdShort = (d) => md(d).replace(/^0/, "").replace("/0", "/");
 const gpuText = (spec) => {
-  if (!spec.gpu) return null;
+  if (!spec || !spec.gpu) return null;
   if (spec.gpu === "IGPU") return "내장그래픽";
-  return spec.gpu.replace(/^NV-/, "RTX ").replace(/^AMD-/, "RX ") + (spec.vram ? " " + spec.vram + "GB" : "");
+  return gpuName(spec.gpu) + (spec.vram ? " " + spec.vram + "GB" : "");
 };
+/** NV-750 은 GTX, NV-5070TI 는 RTX — 번호로 가른다 (2000 미만은 GTX 세대) */
+function gpuName(gpu) {
+  if (!gpu) return "";
+  if (gpu === "IGPU") return "내장그래픽";
+  if (gpu.indexOf("AMD-") === 0) return "RX " + gpu.slice(4);
+  const model = gpu.replace(/^NV-/, "");
+  const numeric = parseInt(model, 10);
+  return (numeric >= 2000 ? "RTX " : "GTX ") + model;
+}
 
 let DATA = null;
 let ready = false; // 데이터를 받아 잠금 해제 준비가 끝났는지
@@ -323,7 +348,7 @@ function salesHeader() {
   const dates = DATA.pairs.salesDates || [];
   if (!dates.length) return el("span");
   return el("div", { className: "r-days rhead" }, dates.map((d) =>
-    el("div", { className: "r-day", textContent: md(d).replace(/^0/, "") })));
+    el("div", { className: "r-day", textContent: mdShort(d) })));
 }
 
 /** 한 상품의 스펙 상세 — 우리가 정리한 부품, 스펙 이미지, 최근 스펙 변경 */
@@ -768,18 +793,261 @@ function viewRank() {
   ];
 }
 
+/* ═══════════ 업체별 추이 (꺾은선 그래프) ═══════════ */
+const SERIES_COLORS = ["#23795a", "#b3382c", "#2c5f8a", "#a96b1f", "#7a5ea8", "#3f8f7a", "#c2557a", "#6b7a3f", "#8a6a4f", "#4f6f9a", "#9a4f7a"];
+let sellerMetric = "sold";            // sold | rank | products
+let sellerHidden = new Set();         // 숨긴 업체
+
+function sellerValue(seller, date) {
+  if (sellerMetric === "products") return seller.products ? seller.products[date] : null;
+  return seller.sold ? seller.sold[date] : null;
+}
+
+/** 그날 판매 대수로 매긴 업체 등수 (1등이 가장 많이 판 업체) */
+function sellerRanks(sellers, date) {
+  const list = sellers
+    .map((s) => ({ name: s.name, v: (s.sold && s.sold[date]) || 0 }))
+    .filter((x) => x.v > 0)
+    .sort((a, b) => b.v - a.v);
+  const map = {};
+  list.forEach((x, i) => (map[x.name] = i + 1));
+  return map;
+}
+
+function svgEl(tag, attrs = {}, children = []) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k of Object.keys(attrs)) node.setAttribute(k, attrs[k]);
+  for (const c of [].concat(children)) node.append(c);
+  return node;
+}
+
+function renderSellerChart() {
+  const t = DATA.sellerTrend;
+  if (!t) return;
+  const dates = t.dates || [];
+  const shown = (t.sellers || []).filter((s) => !sellerHidden.has(s.name));
+
+  // 값 표 만들기
+  const rankByDate = {};
+  if (sellerMetric === "rank") for (const d of dates) rankByDate[d] = sellerRanks(t.sellers || [], d);
+  const valueOf = (s, d) => (sellerMetric === "rank" ? rankByDate[d][s.name] || null : sellerValue(s, d));
+
+  const W = 960, H = 340, padL = 52, padR = 16, padT = 14, padB = 40;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  let maxV = 0;
+  for (const s of shown) for (const d of dates) { const v = valueOf(s, d); if (v != null && v > maxV) maxV = v; }
+  if (!maxV) maxV = 1;
+
+  const x = (i) => padL + (dates.length <= 1 ? plotW / 2 : (i * plotW) / (dates.length - 1));
+  // 순위는 1등이 위로 오도록 뒤집는다
+  const y = (v) => (sellerMetric === "rank"
+    ? padT + ((v - 1) / Math.max(1, maxV - 1)) * plotH
+    : padT + plotH - (v / maxV) * plotH);
+
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", preserveAspectRatio: "xMidYMid meet" });
+
+  // 가로 눈금선 + 값
+  const steps = 4;
+  for (let i = 0; i <= steps; i++) {
+    const v = sellerMetric === "rank" ? 1 + ((maxV - 1) * i) / steps : (maxV * (steps - i)) / steps;
+    const yy = y(v);
+    svg.append(svgEl("line", { x1: padL, x2: W - padR, y1: yy, y2: yy, stroke: "#e5e2db", "stroke-width": 1 }));
+    svg.append(svgEl("text", { x: padL - 8, y: yy + 4, "text-anchor": "end", class: "axis" },
+      document.createTextNode(sellerMetric === "rank" ? Math.round(v) + "위" : num(Math.round(v)))));
+  }
+  // 날짜 (너무 촘촘하면 건너뛴다)
+  const every = Math.ceil(dates.length / 8);
+  dates.forEach((d, i) => {
+    if (i % every && i !== dates.length - 1) return;
+    svg.append(svgEl("text", { x: x(i), y: H - 14, "text-anchor": "middle", class: "axis" },
+      document.createTextNode(mdShort(d))));
+  });
+
+  // 선
+  shown.forEach((s, si) => {
+    const color = /한성/.test(s.name) ? "#23795a" : SERIES_COLORS[(si + 1) % SERIES_COLORS.length];
+    const isOurs = /한성/.test(s.name);
+    let dAttr = "";
+    let started = false;
+    dates.forEach((d, i) => {
+      const v = valueOf(s, d);
+      if (v == null) { started = false; return; }
+      dAttr += (started ? " L" : " M") + x(i) + " " + y(v);
+      started = true;
+    });
+    if (dAttr) {
+      svg.append(svgEl("path", { d: dAttr.trim(), fill: "none", stroke: color, "stroke-width": isOurs ? 3 : 1.8,
+        "stroke-linejoin": "round", "stroke-linecap": "round", opacity: isOurs ? 1 : 0.85 }));
+    }
+    dates.forEach((d, i) => {
+      const v = valueOf(s, d);
+      if (v == null) return;
+      const dot = svgEl("circle", { cx: x(i), cy: y(v), r: isOurs ? 4 : 3, fill: color });
+      dot.append(svgEl("title", {}, document.createTextNode(
+        s.name + " · " + md(d) + " · " + (sellerMetric === "rank" ? v + "위" : num(v) + (sellerMetric === "products" ? "개" : "대")))));
+      svg.append(dot);
+    });
+  });
+
+  $("#chartBox").replaceChildren(svg);
+
+  // 범례 (누르면 감췄다 켰다)
+  $("#legend").replaceChildren(...(t.sellers || []).map((s, si) => {
+    const color = /한성/.test(s.name) ? "#23795a" : SERIES_COLORS[(si + 1) % SERIES_COLORS.length];
+    const off = sellerHidden.has(s.name);
+    const chip = el("button", { className: "legend-item" + (off ? " off" : ""), onclick: () => {
+      if (off) sellerHidden.delete(s.name); else sellerHidden.add(s.name);
+      renderSellerChart();
+    } }, [
+      el("span", { className: "swatch", style: "background:" + color }),
+      document.createTextNode(s.name + " " + num(s.total) + "대"),
+    ]);
+    return chip;
+  }));
+}
+
+function viewSellers() {
+  const t = DATA.sellerTrend;
+  if (!t) return [el("div", { className: "empty", textContent: "아직 업체별 데이터가 없어요" })];
+  const dates = t.dates || [];
+  const metrics = [["sold", "판매 대수"], ["rank", "업체 순위"], ["products", "순위에 오른 상품 수"]];
+  return [
+    el("div", { className: "page-head" }, el("div", {}, [
+      el("h1", { textContent: "업체별 추이" }),
+      el("div", { className: "page-sub", textContent:
+        (dates[0] || "") + " ~ " + (dates[dates.length - 1] || "") + " · 수집 " + dates.length + "일 · 진한 초록이 한성 · 점에 마우스를 올리면 값이 보여요" }),
+    ])),
+    el("div", { className: "controls" }, metrics.map(([k, label]) =>
+      el("button", { className: "chip-btn" + (sellerMetric === k ? " on" : ""), textContent: label,
+        onclick: () => { sellerMetric = k; render(); } })
+    )),
+    el("div", { className: "panel", style: "padding:16px 18px" }, [
+      el("div", { id: "chartBox" }),
+      el("div", { className: "legend", id: "legend" }),
+    ]),
+    el("div", { className: "section-note", textContent: "업체별 합계 (기간 전체)" }),
+    el("div", { className: "panel" }, el("div", { className: "scroll" }, el("table", {}, [
+      el("thead", {}, el("tr", {}, [
+        el("th", { textContent: "순위" }), el("th", { textContent: "업체" }),
+        el("th", { className: "num", textContent: "기간 판매" }),
+        ...dates.map((d) => el("th", { className: "num", textContent: mdShort(d) })),
+      ])),
+      el("tbody", {}, (t.sellers || []).map((s, i) =>
+        el("tr", { className: /한성/.test(s.name) ? "hansung" : "" }, [
+          el("td", { textContent: i + 1 }),
+          el("td", { textContent: s.name }),
+          el("td", { className: "num" }, el("b", { textContent: num(s.total) + "대" })),
+          ...dates.map((d) => {
+            const v = s.sold ? s.sold[d] : null;
+            return el("td", { className: "num " + (v > 0 ? "up" : "mute"), textContent: v == null ? "—" : num(v) });
+          }),
+        ])
+      )),
+    ]))),
+  ];
+}
+
+/* ═══════════ 추천 상품 ═══════════ */
+let ideaOpen = null;
+
+function renderIdeas() {
+  const r = DATA.recommend;
+  if (!r) return;
+  const dates = r.dates || [];
+  const box = $("#ideaList");
+  box.replaceChildren(...(r.items || []).map((x, idx) => {
+    const card = el("div", { className: "pcard" + (ideaOpen === x.key ? " open" : "") });
+    const main = el("div", { className: "pcard-main" }, [
+      el("div", { className: "r-rank", textContent: idx + 1 }),
+      el("div", { className: "p-info" }, [
+        el("div", { className: "p-title", textContent:
+          (x.cpu || "").replace(/^(AMD|INTEL)-/, "") + " + " + gpuName(x.gpu) + (x.vram ? " " + x.vram + "GB" : "") }),
+        el("div", { className: "p-chips" }, [
+          el("span", { className: "chip", textContent: "파는 곳 " + x.products + "개" }),
+          x.minPrice ? el("span", { className: "chip", textContent:
+            num(x.minPrice) + "원" + (x.maxPrice && x.maxPrice !== x.minPrice ? " ~ " + num(x.maxPrice) + "원" : "") }) : null,
+        ].filter(Boolean)),
+      ]),
+      el("div", { className: "idea-days" }, dates.map((d) => {
+        const v = x.daily[d];
+        return el("div", { className: "r-day" + (v ? "" : " mute") }, [
+          el("div", { className: "cellnum" + (v ? "" : " zero"), textContent: v ? num(v) : "—" }),
+          el("span", { className: "subline", textContent: mdShort(d) }),
+        ]);
+      })),
+      el("div", { className: "p-side" }, [
+        el("div", { className: "p-price", textContent: num(x.sold) + "대" }),
+        el("span", { className: "verdict behind", textContent: "우리 상품 없음" }),
+      ]),
+      el("div", { className: "caret", textContent: "▾" }),
+    ]);
+    main.onclick = () => { ideaOpen = ideaOpen === x.key ? null : x.key; renderIdeas(); };
+    card.append(main);
+    if (ideaOpen === x.key) {
+      card.append(el("div", { className: "rivals" }, [
+        el("div", { className: "rivals-note", textContent: "이 조합으로 팔리고 있는 상품 (많이 판 순)" }),
+        ...x.examples.map((e, i) =>
+          el("div", { className: "rrow", style: "cursor:default" }, [
+            el("div", { className: "r-rank", textContent: i + 1 }),
+            el("div", { className: "r-info" }, [
+              el("div", { className: "r-seller", textContent: e.brand || "-" }),
+              el("div", { className: "r-name" },
+                e.url ? el("a", { href: e.url, target: "_blank", rel: "noreferrer", textContent: e.title })
+                      : document.createTextNode(e.title)),
+            ]),
+            el("div", { className: "r-sales" }, [
+              el("div", { textContent: "기간 " + num(e.sold) + "대" }),
+              e.cumulative != null ? el("div", { textContent: "누적 " + num(e.cumulative) + "대" }) : el("div"),
+            ]),
+            el("div", { className: "r-price" }, el("b", { textContent: e.price != null ? won(e.price) : "-" })),
+          ])
+        ),
+      ]));
+    }
+    return card;
+  }));
+}
+
+function viewIdeas() {
+  const r = DATA.recommend;
+  if (!r || !(r.items || []).length) {
+    return [el("div", { className: "empty", textContent: "추천할 조합이 아직 없어요 (판매 기록이 더 쌓이면 나옵니다)" })];
+  }
+  const dates = r.dates || [];
+  return [
+    el("div", { className: "page-head" }, el("div", {}, [
+      el("h1", { textContent: "추천 상품" }),
+      el("div", { className: "page-sub", textContent:
+        "한성에 없는 CPU·그래픽 조합 중 최근 잘 팔린 순서예요 · " +
+        (dates[0] || "") + " ~ " + (dates[dates.length - 1] || "") + " 판매 기준 · 한성이 가진 조합 " + r.ourCombos + "개는 제외" }),
+    ])),
+    el("div", { className: "plist", id: "ideaList" }),
+    el("div", { className: "section-note", textContent:
+      "상품명에서 CPU·그래픽을 읽어 묶었어요. 이름만으로 확정할 수 없는 상품(사무용·미니PC 등)과 중고·리퍼는 빠집니다." }),
+  ];
+}
+
 function render() {
   const app = $("#app");
   app.className = "";
-  app.replaceChildren(...(tab === "home" ? viewHome() : tab === "pairs" ? viewPairs() : viewRank()));
+  const view =
+    tab === "home" ? viewHome() :
+    tab === "pairs" ? viewPairs() :
+    tab === "rank" ? viewRank() :
+    tab === "sellers" ? viewSellers() :
+    viewIdeas();
+  app.replaceChildren(...view);
   if (tab === "pairs") renderPairList();
   if (tab === "rank") renderSalesTable();
+  if (tab === "sellers") renderSellerChart();
+  if (tab === "ideas") renderIdeas();
 }
 
 function start(data) {
   DATA = data;
   $("#cntPairs").textContent = DATA.pairs.summary.ours;
   $("#cntRank").textContent = DATA.sales && DATA.sales.daily ? DATA.sales.daily.rows.length : "";
+  $("#cntIdeas").textContent = DATA.recommend ? (DATA.recommend.items || []).length : "";
   $("#sideFoot").textContent = "마지막 갱신\n" + String(DATA.generatedAt).slice(0, 16).replace("T", " ") + "\n(2시간마다 갱신)";
   $("#sideFoot").style.whiteSpace = "pre-line";
   $("#lock").hidden = true;
