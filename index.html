@@ -187,6 +187,39 @@
   .legend-item.off { opacity: 0.35; text-decoration: line-through; }
   .legend .swatch { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
   .section-note { font-size: 12px; color: var(--muted); margin: 18px 0 8px 2px; }
+  /* 점검 */
+  #tabs .count.alarm { background: var(--warn); color: #fff; padding: 0 6px; border-radius: 999px; font-weight: 600; }
+  .issues { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+  .issue { display: flex; gap: 11px; align-items: flex-start; background: var(--card); border: 1px solid var(--line);
+    border-left: 3px solid var(--line); border-radius: 10px; padding: 12px 15px; }
+  .issue.bad { border-left-color: var(--bad); background: #fdf6f5; }
+  .issue.warn { border-left-color: var(--warn); background: #fdfaf4; }
+  .issue.ok { border-left-color: var(--brand); background: #f6faf8; }
+  .issue-mark { flex: 0 0 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 12px; font-weight: 700; color: #fff; background: var(--faint); }
+  .issue.bad .issue-mark { background: var(--bad); }
+  .issue.warn .issue-mark { background: var(--warn); }
+  .issue.ok .issue-mark { background: var(--brand); }
+  .issue-title { font-size: 14px; font-weight: 600; }
+  .issue-detail { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+  .missed-line { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin: 4px 0; }
+  .missed-label { font-size: 12px; font-weight: 600; margin-right: 4px; flex: 0 0 62px; }
+  .pill { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+  .pill.ok { background: #e6f2ec; color: var(--brand); }
+  .pill.bad { background: #f8e5e2; color: var(--bad); }
+  tr.row-bad td { background: #fdf6f5; }
+  .steps { display: inline-flex; flex-wrap: wrap; gap: 3px; }
+  .step { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #eef1ee; color: var(--muted); }
+  .step.ok { background: #e6f2ec; color: var(--brand); }
+  .step.bad { background: #f8e5e2; color: var(--bad); }
+  .freshness { display: flex; flex-direction: column; gap: 5px; }
+  .fresh-row { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
+  .fresh-label { flex: 0 0 76px; color: var(--muted); }
+  .fresh-row.good .fresh-label { color: var(--brand); font-weight: 600; }
+  .fresh-bar { flex: 1 1 auto; height: 9px; background: #f0ede7; border-radius: 999px; overflow: hidden; }
+  .fresh-bar i { display: block; height: 100%; background: var(--warn); opacity: 0.55; }
+  .fresh-row.good .fresh-bar i { background: var(--brand); }
+  .fresh-num { flex: 0 0 56px; text-align: right; font-variant-numeric: tabular-nums; }
   /* 언제 긁어온 값인지 */
   .when { display: block; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; margin-top: 3px; }
   .when.stale { color: var(--warn); }
@@ -250,6 +283,7 @@
     <button data-tab="rank">판매 순위 <span class="count" id="cntRank"></span></button>
     <button data-tab="sellers">업체 순위</button>
     <button data-tab="ideas">추천 상품 <span class="count" id="cntIdeas"></span></button>
+    <button data-tab="health">점검 <span class="count" id="cntHealth"></span></button>
   </nav>
   <div class="side-foot" id="sideFoot"></div>
 </aside>
@@ -1150,6 +1184,172 @@ function viewSellers() {
   ];
 }
 
+/* ═══════════ 점검 ═══════════ */
+
+/** 밀리초 → "56초" / "1시간 18분" */
+function dur(ms) {
+  if (ms == null) return "";
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return sec + "초";
+  const min = Math.round(sec / 60);
+  if (min < 60) return min + "분";
+  return Math.floor(min / 60) + "시간 " + (min % 60) + "분";
+}
+
+/** "N시간 전" / "N일 전" */
+function agoText(iso) {
+  const h = hoursAgo(iso);
+  if (h == null) return "";
+  if (h < 1) return Math.max(0, Math.round(h * 60)) + "분 전";
+  if (h < 48) return Math.floor(h) + "시간 전";
+  return Math.floor(h / 24) + "일 전";
+}
+
+const STEP_NAME = { standards: "기준표", collect: "상품 수집", sales: "판매 순위", analyze: "사진 읽기", export: "내보내기", history: "변경 기록" };
+const RUN_STATE = { done: "정상 종료", interrupted: "중간에 끊김", failed: "실패", canceled: "사람이 멈춤", running: "돌고 있음" };
+
+function issueCard(level, title, detail) {
+  return el("div", { className: "issue " + level }, [
+    el("div", { className: "issue-mark", textContent: level === "bad" ? "!" : level === "warn" ? "!" : "✓" }),
+    el("div", {}, [
+      el("div", { className: "issue-title", textContent: title }),
+      el("div", { className: "issue-detail", textContent: detail }),
+    ]),
+  ]);
+}
+
+/**
+ * 이 페이지를 보는 지금 시각으로 다시 따지는 문제.
+ * 데이터를 만든 건 콘솔이라, 만든 뒤에 콘솔이 죽었으면 데이터 안에는 아무 표시가 없다.
+ * 그래서 "데이터가 몇 시간째 그대로인지"는 브라우저 시계로 봐야 한다.
+ */
+function liveIssues() {
+  const out = [];
+  const h = hoursAgo(DATA.generatedAt);
+  const every = ((DATA.health && DATA.health.schedule.salesEveryMinutes) || 120) / 60;
+  if (h != null && h > every + 1) {
+    out.push(issueCard("bad", "대시보드가 " + agoText(DATA.generatedAt) + " 부터 그대로예요",
+      "마지막 갱신 " + whenText(DATA.generatedAt) + " · " + every + "시간마다 올라와야 합니다. 콘솔이 꺼져 있는지 확인해 주세요."));
+  }
+  return out;
+}
+
+function viewHealth() {
+  const h = DATA.health;
+  if (!h) return [el("div", { className: "empty", textContent: "점검 데이터가 아직 없어요" })];
+
+  const live = liveIssues();
+  const cards = [...live, ...h.issues.map((i) => issueCard(i.level, i.title, i.detail))];
+  // 실시간으로 문제가 잡혔으면 "이상 없어요" 카드는 뺀다
+  const shown = live.length ? cards.filter((c) => !c.classList.contains("ok")) : cards;
+
+  const sched = h.schedule;
+  const facts = [
+    ["판매 순위", sched.salesEveryMinutes ? sched.salesEveryMinutes / 60 + "시간마다 (" + sched.salesFrom + "~" + sched.salesTo + ")" : (sched.salesTimes || []).join(", ") || "예약 없음",
+      h.lastSalesAt ? whenText(h.lastSalesAt) + " · " + agoText(h.lastSalesAt) : "기록 없음"],
+    ["스펙 수집", (sched.specTimes || []).join(", ") || "예약 없음",
+      h.lastSpecAt ? whenText(h.lastSpecAt) + " · " + agoText(h.lastSpecAt) : "기록 없음"],
+    ["부품 기준표", "회차마다 확인", h.standardsUpdatedAt ? whenText(h.standardsUpdatedAt) + " · " + agoText(h.standardsUpdatedAt) : "기록 없음"],
+  ];
+
+  const out = [
+    el("div", { className: "page-head" }, el("div", {}, [
+      el("h1", { textContent: "점검" }),
+      el("div", { className: "page-sub", textContent:
+        "예약된 수집이 제때 돌았는지, 빠뜨린 게 있는지 봅니다 · 이 데이터는 " + whenText(DATA.generatedAt) + "에 만들어졌어요" }),
+    ])),
+    el("div", { className: "issues" }, shown),
+
+    el("div", { className: "section-note", textContent: "예약과 마지막 실행" }),
+    el("div", { className: "panel" }, el("div", { className: "scroll" }, el("table", {}, [
+      el("thead", {}, el("tr", {}, [
+        el("th", { textContent: "무엇" }), el("th", { textContent: "예약" }), el("th", { textContent: "마지막 실행" }),
+      ])),
+      el("tbody", {}, facts.map(([a, b, c]) => el("tr", {}, [
+        el("td", {}, el("b", { textContent: a })),
+        el("td", { className: "mute", textContent: b }),
+        el("td", { textContent: c }),
+      ]))),
+    ]))),
+  ];
+
+  if ((h.missedSales || []).length || (h.missedSpec || []).length) {
+    out.push(el("div", { className: "section-note", textContent: "놓친 예약 — 그 시각에 콘솔이 꺼져 있었을 가능성이 큽니다" }));
+    out.push(el("div", { className: "panel", style: "padding:14px 18px" }, [
+      (h.missedSales || []).length ? el("div", { className: "missed-line" }, [
+        el("span", { className: "missed-label", textContent: "판매 순위" }),
+        ...h.missedSales.map((t) => el("span", { className: "chip warn", textContent: t })),
+      ]) : null,
+      (h.missedSpec || []).length ? el("div", { className: "missed-line" }, [
+        el("span", { className: "missed-label", textContent: "스펙 수집" }),
+        ...h.missedSpec.map((t) => el("span", { className: "chip warn", textContent: t })),
+      ]) : null,
+    ].filter(Boolean)));
+  }
+
+  out.push(el("div", { className: "section-note", textContent: "판매 순위 회차 " + h.salesRuns.length + "건 (최근 순)" }));
+  out.push(el("div", { className: "panel" }, el("div", { className: "scroll" }, el("table", {}, [
+    el("thead", {}, el("tr", {}, [
+      el("th", { textContent: "시각" }), el("th", { textContent: "결과" }),
+      el("th", { className: "num", textContent: "받은 상품" }), el("th", { className: "num", textContent: "걸린 시간" }),
+      el("th", { textContent: "무엇이 시켰나" }), el("th", { textContent: "메모" }),
+    ])),
+    el("tbody", {}, h.salesRuns.map((r) => el("tr", { className: r.ok ? "" : "row-bad" }, [
+      el("td", { textContent: whenText(r.at) }),
+      el("td", {}, el("span", { className: "pill " + (r.ok ? "ok" : "bad"), textContent: r.ok ? "성공" : "실패" })),
+      el("td", { className: "num", textContent: r.items == null ? "—" : num(r.items) }),
+      el("td", { className: "num mute", textContent: dur(r.ms) }),
+      el("td", { className: "mute", textContent: r.trigger === "schedule" ? "예약" : r.trigger === "manual" ? "사람" : r.trigger }),
+      el("td", { className: "mute", textContent: r.reason || "" }),
+    ]))),
+  ]))));
+
+  out.push(el("div", { className: "section-note", textContent: "스펙 수집 회차 " + h.specRuns.length + "건 (최근 순)" }));
+  out.push(el("div", { className: "panel" }, el("div", { className: "scroll" }, el("table", {}, [
+    el("thead", {}, el("tr", {}, [
+      el("th", { textContent: "시각" }), el("th", { textContent: "상태" }), el("th", { textContent: "단계" }),
+      el("th", { className: "num", textContent: "걸린 시간" }), el("th", { className: "num", textContent: "읽은 사진" }),
+      el("th", { className: "num", textContent: "든 돈" }), el("th", { textContent: "메모" }),
+    ])),
+    el("tbody", {}, h.specRuns.map((r) => {
+      const took = r.startedAt && r.finishedAt ? Date.parse(r.finishedAt) - Date.parse(r.startedAt) : null;
+      return el("tr", { className: r.state === "done" ? "" : "row-bad" }, [
+        el("td", { textContent: whenText(r.startedAt) }),
+        el("td", {}, el("span", { className: "pill " + (r.state === "done" ? "ok" : "bad"), textContent: RUN_STATE[r.state] || r.state })),
+        el("td", {}, el("span", { className: "steps" }, (r.steps || []).map((s) =>
+          el("span", { className: "step " + (s.ok ? "ok" : "bad"), title: STEP_NAME[s.step] || s.step, textContent: STEP_NAME[s.step] || s.step })))),
+        el("td", { className: "num mute", textContent: dur(took) }),
+        el("td", { className: "num", textContent: r.created == null ? "—" : num(r.created) }),
+        el("td", { className: "num mute", textContent: r.costUsd == null ? "—" : "$" + r.costUsd.toFixed(2) }),
+        el("td", { className: "mute", textContent: (r.rateLimited ? "사용량 제한 대기 " : "") + (r.reason || "") }),
+      ]);
+    })),
+  ]))));
+
+  const pf = h.products;
+  out.push(el("div", { className: "section-note", textContent: "상품 가격을 마지막으로 받아온 때 (모두 " + num(pf.total) + "개)" }));
+  const maxBucket = Math.max(...pf.buckets.map((b) => b.count), 1);
+  out.push(el("div", { className: "panel", style: "padding:14px 18px" }, [
+    el("div", { className: "freshness" }, pf.buckets.map((b) =>
+      el("div", { className: "fresh-row" + (b.label === "오늘" ? " good" : "") }, [
+        el("span", { className: "fresh-label", textContent: b.label }),
+        el("span", { className: "fresh-bar" }, el("i", { style: "width:" + ((b.count / maxBucket) * 100).toFixed(1) + "%" })),
+        el("span", { className: "fresh-num", textContent: num(b.count) + "개" }),
+      ])
+    )),
+    pf.worst.length ? el("div", { className: "rivals-note", style: "margin-top:12px", textContent:
+      "가장 오래된 " + pf.worst.length + "개 — 미니샵 목록에서 사라져 다시 못 잡은 상품입니다" }) : null,
+    ...pf.worst.map((w) => el("div", { className: "irow", style: "padding-left:0" }, [
+      el("div", { className: "i-name", textContent: w.title }),
+      el("div", { className: "i-sub", textContent: seller(w.brandKey) }),
+      el("div", { className: "i-sub" }, el("span", { className: "when stale", style: "display:inline",
+        textContent: whenText(w.collectedAt) + " · " + agoText(w.collectedAt) })),
+    ])),
+  ].filter(Boolean)));
+
+  return out;
+}
+
 /* ═══════════ 추천 상품 ═══════════ */
 let ideaOpen = null;
 
@@ -1238,7 +1438,8 @@ function render() {
     tab === "pairs" ? viewPairs() :
     tab === "rank" ? viewRank() :
     tab === "sellers" ? viewSellers() :
-    viewIdeas();
+    tab === "ideas" ? viewIdeas() :
+    viewHealth();
   app.replaceChildren(...view);
   if (tab === "pairs") renderPairList();
   if (tab === "rank") renderSalesTable();
@@ -1251,6 +1452,10 @@ function start(data) {
   $("#cntPairs").textContent = DATA.pairs.summary.ours;
   $("#cntRank").textContent = DATA.sales && DATA.sales.daily ? DATA.sales.daily.rows.length : "";
   $("#cntIdeas").textContent = DATA.recommend ? (DATA.recommend.items || []).length : "";
+  // 점검 뱃지는 "문제 개수" — 이상 없으면 아무것도 안 띄운다
+  const bad = DATA.health ? DATA.health.issues.filter((i) => i.level !== "ok").length + liveIssues().length : 0;
+  $("#cntHealth").textContent = bad ? bad : "";
+  $("#cntHealth").className = "count" + (bad ? " alarm" : "");
   $("#sideFoot").textContent = "마지막 갱신\n" + String(DATA.generatedAt).slice(0, 16).replace("T", " ") + "\n(2시간마다 갱신)";
   $("#sideFoot").style.whiteSpace = "pre-line";
   $("#lock").hidden = true;
