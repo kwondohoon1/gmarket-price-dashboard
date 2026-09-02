@@ -37,12 +37,26 @@
   #tabs button.on { background: var(--ok-soft); color: var(--ok-dark); font-weight: 600; }
   #tabs .count { font-size: 11.5px; color: var(--faint); font-weight: 400; }
   #tabs button.on .count { color: var(--ok); }
-  .market { padding: 0 4px 12px; margin-bottom: 4px; border-bottom: 1px solid var(--soft); }
-  .market-label { font-size: 11px; color: var(--faint); padding: 0 8px 6px; }
-  .market-btns { display: flex; gap: 4px; background: var(--soft); border-radius: 10px; padding: 3px; }
-  .market-btn { flex: 1 1 0; border: 0; background: transparent; color: #55524a; font: inherit; font-size: 13px;
-    padding: 7px 6px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
-  .market-btn.on { background: var(--card); color: #24221d; font-weight: 700; box-shadow: var(--shadow); }
+  .market { position: relative; padding: 0 4px 10px; margin-bottom: 4px; border-bottom: 1px solid var(--soft); }
+  .market-toggle { width: 100%; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line);
+    background: var(--card); color: #24221d; font: inherit; font-size: 14px; font-weight: 700;
+    padding: 9px 12px; border-radius: 10px; cursor: pointer; text-align: left; }
+  .market-toggle:hover { border-color: #c9c4b8; }
+  .market-toggle.open { border-color: var(--brand); }
+  .market-cap { font-size: 11px; font-weight: 400; color: var(--faint); }
+  .market-now { flex: 1 1 auto; }
+  .market-arrow { color: var(--faint); font-size: 11px; transition: transform 0.15s; }
+  .market-toggle.open .market-arrow { transform: rotate(180deg); }
+  .market-menu { position: absolute; left: 4px; right: 4px; top: calc(100% - 6px); z-index: 20;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 4px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 2px; }
+  .market-menu[hidden] { display: none; }
+  .market-item { display: flex; flex-direction: column; gap: 1px; border: 0; background: transparent;
+    color: #24221d; font: inherit; font-size: 13.5px; text-align: left; padding: 8px 10px;
+    border-radius: 8px; cursor: pointer; }
+  .market-item:hover { background: var(--soft); }
+  .market-item.on { background: var(--ok-soft); color: var(--ok-dark); font-weight: 700; }
+  .market-item-sub { font-size: 11px; color: var(--faint); font-weight: 400; }
   .tab-sep { height: 1px; background: var(--soft); margin: 8px 12px; }
   .side-foot { font-size: 11.5px; color: var(--faint); padding: 12px 12px 0; border-top: 1px solid var(--soft); line-height: 1.6; }
 
@@ -470,24 +484,43 @@ let tab = "home";
 const marketsWithData = () => MARKETS.filter((m) => m.has());
 const currentMarket = () => marketsWithData().find((m) => m.key === market) || marketsWithData()[0];
 
-/** 마켓 고르는 줄 — 마켓이 하나뿐이면 굳이 고르게 하지 않는다 */
+let marketOpen = false;
+
+/** 마켓 고르기 — 화살표를 누르면 밑으로 목록이 펼쳐진다 (마켓이 늘어도 그대로 쓴다) */
 function renderMarketPicker() {
   const list = marketsWithData();
+  const now = currentMarket();
   const box = $("#market");
-  if (list.length < 2) {
-    box.replaceChildren();
-    box.hidden = true;
-    return;
-  }
   box.hidden = false;
-  box.replaceChildren(
-    el("div", { className: "market-label", textContent: "마켓" }),
-    el("div", { className: "market-btns" }, list.map((m) =>
-      el("button", { className: "market-btn" + (m.key === currentMarket().key ? " on" : ""), textContent: m.name,
-        onclick: () => goMarket(m.key) })
-    ))
+
+  const toggle = el("button", {
+    className: "market-toggle" + (marketOpen ? " open" : ""),
+    "aria-expanded": marketOpen ? "true" : "false",
+    onclick: (e) => { e.stopPropagation(); marketOpen = !marketOpen; renderMarketPicker(); },
+  }, [
+    el("span", { className: "market-cap", textContent: "마켓" }),
+    el("span", { className: "market-now", textContent: now ? now.name : "-" }),
+    el("span", { className: "market-arrow", textContent: "▾" }),
+  ]);
+
+  const menu = el("div", { className: "market-menu", hidden: !marketOpen },
+    list.map((m) =>
+      el("button", {
+        className: "market-item" + (now && m.key === now.key ? " on" : ""),
+        onclick: (e) => { e.stopPropagation(); marketOpen = false; goMarket(m.key); },
+      }, [
+        el("span", { textContent: m.name }),
+        el("span", { className: "market-item-sub", textContent: m.sub }),
+      ])
+    )
   );
+
+  box.replaceChildren(toggle, menu);
 }
+
+// 바깥을 누르거나 Esc 를 누르면 닫는다
+document.addEventListener("click", () => { if (marketOpen) { marketOpen = false; renderMarketPicker(); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && marketOpen) { marketOpen = false; renderMarketPicker(); } });
 
 function renderTabs() {
   const m = currentMarket();
