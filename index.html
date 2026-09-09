@@ -252,6 +252,8 @@
   .brandbar { display: flex; align-items: center; gap: 8px; min-width: 150px; }
   .brandbar i { display: block; height: 8px; border-radius: 999px; background: var(--brand); opacity: 0.45; }
   .brandbar-num { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .part-src { margin-left: 6px; font-size: 10.5px; font-weight: 400; color: var(--faint);
+    border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; }
   /* 언제 긁어온 값인지 */
   .when { display: block; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; margin-top: 3px; }
   .when.stale { color: var(--warn); }
@@ -632,12 +634,19 @@ function specPanel(row) {
 
   if (d.parts && d.parts.length) {
     box.append(el("div", { className: "spec-line" }, [
-      el("span", { className: "spec-key", textContent: "부품" }),
+      el("span", { className: "spec-key" }, [
+        document.createTextNode("부품"),
+        // 우리 제품은 구성표에서 그대로 온 값이고, 경쟁사는 스펙 이미지를 읽어 맞춘 값이다
+        el("span", { className: "part-src", textContent: d.specSource === "sheet" ? "구성표" : "스펙 이미지" }),
+      ]),
       el("div", { className: "parts" }, d.parts.map((pt) =>
         el("div", { className: "part" }, [
           el("span", { className: "part-f", textContent: FIELD_LABEL[pt.f] || pt.f }),
-          el("span", { className: pt.ok ? "" : "mute", textContent: pt.n || "-" }),
-          pt.ok ? el("span") : el("span", { className: "chip warn", style: "margin-left:6px", textContent: "가격표에 없음" }),
+          el("span", { className: pt.src === "sheet" || pt.ok ? "" : "mute", textContent: pt.n || "-" }),
+          // 가격표 대조는 스펙 이미지를 읽은 상품에만 해당한다 — 구성표 값에는 붙이지 않는다
+          pt.src === "sheet" || pt.ok
+            ? el("span")
+            : el("span", { className: "chip warn", style: "margin-left:6px", textContent: "가격표에 없음" }),
         ])
       )),
     ]));
