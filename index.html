@@ -1314,8 +1314,8 @@ function viewHimartPrice() {
 
   return [
     himartHead("하이마트 가격정보",
-      (h.vendors || []).map((v) => v.name + " " + num(v.count)).join(" · ") +
-      " — 업체별 판매량순 상위 " + num(h.perVendor || 30) + "개 · " + md(h.latestDate) + at + " 기준" + failedNote),
+      (h.vendors || []).map((v) => v.name + " " + num(v.count) + (v.limit === 0 ? "(전체)" : "")).join(" · ") +
+      " — 판매량순, 표시가 없는 업체는 상위 " + num(h.perVendor || 30) + "개 · " + md(h.latestDate) + at + " 기준" + failedNote),
 
     el("div", { className: "controls" }, [
       el("select", { onchange: (e) => { hpVendor = e.target.value; renderHimartPrice(); } }, [
