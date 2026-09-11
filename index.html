@@ -249,6 +249,12 @@
   .delta.same, .delta.mute { color: var(--faint); font-weight: 400; }
   .delta.new { color: var(--warn); }
   .hm-title { max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 하이마트 가격정보 — 가격 변동은 순위 변동과 색이 반대다 (내리면 좋다) */
+  .delta.pdelta.up { color: var(--bad); }
+  .delta.pdelta.down { color: var(--ok); }
+  .hp-line { font-size: 12px; line-height: 1.45; white-space: nowrap; }
+  .hp-more { margin-top: 2px; }
+  .hp-more summary { cursor: pointer; font-size: 11.5px; color: var(--faint); list-style-position: inside; }
   .brandbar { display: flex; align-items: center; gap: 8px; min-width: 150px; }
   .brandbar i { display: block; height: 8px; border-radius: 999px; background: var(--brand); opacity: 0.45; }
   .brandbar-num { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -458,10 +464,14 @@ const MARKETS = [
     key: "himart",
     name: "하이마트",
     sub: "하이마트 조립PC",
-    has: () => !!(DATA.himart && DATA.himart.items && DATA.himart.items.length),
+    has: () =>
+      !!((DATA.himart && DATA.himart.items && DATA.himart.items.length) ||
+         (DATA.himartPrice && DATA.himartPrice.items && DATA.himartPrice.items.length)),
     tabs: [
-      { id: "hmRank", label: "순위", count: () => DATA.himart.items.length },
+      { id: "hmRank", label: "순위", count: () => (DATA.himart && DATA.himart.items ? DATA.himart.items.length : "") },
       { id: "hmBrand", label: "업체 순위" },
+      // 업체별 상위 상품의 판매가·쿠폰·카드 즉시할인·최대혜택가 (매일 07:00 수집)
+      { id: "hmPrice", label: "가격정보", count: () => (DATA.himartPrice && DATA.himartPrice.items ? DATA.himartPrice.items.length : "") },
     ],
   },
 ];
@@ -1216,8 +1226,134 @@ function viewHimartBrands() {
   ];
 }
 
+/* ═══════════ 하이마트 가격정보 ═══════════ */
+let hpVendor = "";
+let hpQuery = "";
+
+/** 최대혜택가가 어제보다 얼마나 움직였나 — 내리면 초록, 오르면 빨강 */
+function priceDeltaCell(it) {
+  if (it.isNew) return el("span", { className: "delta new", textContent: "새로" });
+  if (it.delta == null) return el("span", { className: "delta mute", textContent: "—" });
+  if (it.delta === 0) return el("span", { className: "delta same", textContent: "제자리" });
+  return el("span", {
+    className: "delta pdelta " + (it.delta > 0 ? "up" : "down"),
+    title: "어제 " + won(it.prevBenefit),
+    textContent: (it.delta > 0 ? "▲" : "▼") + num(Math.abs(it.delta)) + "원",
+  });
+}
+
+/** 최대혜택가 이력 툴팁 — 날짜별 한 줄씩 */
+function benefitHistoryTitle(it) {
+  const h = it.history || {};
+  return Object.keys(h).sort().map((d) => md(d) + "  " + won(h[d])).join("\n");
+}
+
+function couponCell(it) {
+  if (!it.coupons || !it.coupons.length) return el("span", { className: "mute", textContent: "없음" });
+  return el("div", {}, it.coupons.map((c) =>
+    el("div", { className: "hp-line", title: c.period ? "사용 기간 " + c.period : "" }, [
+      el("b", { textContent: won(c.amount) }), " " + c.name,
+    ])
+  ));
+}
+
+/** 대표 카드(최대혜택가에 쓰인 것)만 바로 보이고, 나머지 카드는 펼쳐 본다 */
+function cardCell(it) {
+  const cards = it.cards || [];
+  const primary = cards.find((c) => c.primary) || cards[0];
+  if (!primary) return el("span", { className: "mute", textContent: "없음" });
+  const others = cards.filter((c) => c !== primary);
+  const kids = [el("div", { className: "hp-line" }, [el("b", { textContent: won(primary.amount) }), " " + primary.name])];
+  if (others.length) {
+    kids.push(el("details", { className: "hp-more" }, [
+      el("summary", { textContent: "다른 카드 " + others.length + "개" }),
+      ...others.map((o) => el("div", { className: "hp-line mute", textContent: o.name + "  " + won(o.amount) })),
+    ]));
+  }
+  return el("div", {}, kids);
+}
+
+function hpRows() {
+  const h = DATA.himartPrice;
+  return h.items.filter((it) => {
+    if (hpVendor && it.vendor !== hpVendor) return false;
+    if (hpQuery && ((it.title || "") + " " + (it.vendor || "")).toLowerCase().indexOf(hpQuery) === -1) return false;
+    return true;
+  });
+}
+
+function renderHimartPrice() {
+  const h = DATA.himartPrice;
+  const rows = hpRows();
+  $("#hpMeta").textContent = md(h.latestDate) + " 기준 · " + num(rows.length) + "개" +
+    (h.prevDate ? " · 변동은 " + md(h.prevDate) + " 대비" : " · 첫 수집");
+  $("#hpRows").replaceChildren(...rows.map((it) =>
+    el("tr", { className: /한성/.test(it.vendor || "") ? "hansung" : "" }, [
+      el("td", { className: "num" }, el("b", { textContent: it.rank == null ? "-" : it.rank })),
+      el("td", { textContent: it.vendor || "-" }),
+      el("td", { className: "hm-title" },
+        it.url ? el("a", { href: it.url, target: "_blank", rel: "noreferrer", textContent: it.title })
+               : document.createTextNode(it.title || "")),
+      el("td", { className: "num", textContent: won(it.salePrice) }),
+      el("td", {}, couponCell(it)),
+      el("td", {}, cardCell(it)),
+      el("td", { className: "num" + (it.noBenefit ? " mute" : ""),
+          title: (it.noBenefit ? "할인 혜택이 없어 판매가 그대로예요\n" : "") + benefitHistoryTitle(it) },
+        el("b", { textContent: it.benefitPrice == null ? "-" : num(it.benefitPrice) + "원" + (it.hasOptions ? "~" : "") })),
+      el("td", {}, priceDeltaCell(it)),
+    ])
+  ));
+}
+
+function viewHimartPrice() {
+  const h = DATA.himartPrice;
+  if (!h || !h.items.length) return [el("div", { className: "empty", textContent: "하이마트 가격정보가 아직 없어요 (매일 07:00 에 받아요)" })];
+  const vendors = (h.vendors || []).map((v) => v.name);
+  const at = h.collectedAt ? " " + String(h.collectedAt).slice(11, 16) : "";
+  const failedNote = h.failed ? " · " + num(h.failed) + "개는 이번에 받지 못해 빠졌어요" : "";
+
+  return [
+    himartHead("하이마트 가격정보",
+      (h.vendors || []).map((v) => v.name + " " + num(v.count)).join(" · ") +
+      " — 업체별 판매량순 상위 " + num(h.perVendor || 30) + "개 · " + md(h.latestDate) + at + " 기준" + failedNote),
+
+    el("div", { className: "controls" }, [
+      el("select", { onchange: (e) => { hpVendor = e.target.value; renderHimartPrice(); } }, [
+        el("option", { value: "", textContent: "전체 업체" }),
+        ...vendors.map((b) => el("option", { value: b, textContent: b, selected: b === hpVendor })),
+      ]),
+      el("input", { placeholder: "상품명 검색", value: hpQuery,
+        oninput: (e) => { hpQuery = e.target.value.trim().toLowerCase(); renderHimartPrice(); } }),
+    ]),
+
+    el("div", { className: "panel" }, [
+      el("div", { className: "panel-title" }, [
+        document.createTextNode("판매가와 할인 구성 "),
+        el("span", { className: "mute", id: "hpMeta" }),
+      ]),
+      el("div", { className: "scroll" }, el("table", {}, [
+        el("thead", {}, el("tr", {}, [
+          el("th", { className: "num", textContent: "순위" }),
+          el("th", { textContent: "업체" }),
+          el("th", { textContent: "상품" }),
+          el("th", { className: "num", textContent: "판매가" }),
+          el("th", { textContent: "쿠폰" }),
+          el("th", { textContent: "카드 즉시할인" }),
+          el("th", { className: "num", textContent: "최대혜택가" }),
+          el("th", { textContent: "전일 대비" }),
+        ])),
+        el("tbody", { id: "hpRows" }),
+      ])),
+    ]),
+
+    el("div", { className: "table-note", textContent:
+      "최대혜택가 = 판매가 − 쿠폰 − 카드 즉시할인(맨 위 카드 기준). 쿠폰에 마우스를 올리면 사용 기간이, 최대혜택가에 올리면 최근 이력이 보입니다. " +
+      "'~'가 붙은 값은 옵션에 따라 달라지는 상품의 가장 낮은 가격입니다. 전일 대비는 최대혜택가가 어제보다 얼마나 움직였는지입니다." }),
+  ];
+}
+
 /* ═══════════ 업체 순위 ═══════════ */
-const SERIES_COLORS = ["#23795a", "#b3382c", "#2c5f8a", "#a96b1f", "#7a5ea8", "#3f8f7a", "#c2557a", "#6b7a3f", "#8a6a4f", "#4f6f9a", "#9a4f7a", "#5a7f4f"];
+const SERIES_COLORS =["#23795a", "#b3382c", "#2c5f8a", "#a96b1f", "#7a5ea8", "#3f8f7a", "#c2557a", "#6b7a3f", "#8a6a4f", "#4f6f9a", "#9a4f7a", "#5a7f4f"];
 let sellerMetric = "sold";      // sold | rank | products
 let sellerHidden = new Set();   // 그래프에서 감춘 업체
 let sellerFrom = null, sellerTo = null;
@@ -1750,6 +1886,7 @@ function render() {
     tab === "ideas" ? viewIdeas() :
     tab === "hmRank" ? viewHimartRank() :
     tab === "hmBrand" ? viewHimartBrands() :
+    tab === "hmPrice" ? viewHimartPrice() :
     viewHealth();
   app.replaceChildren(...view);
   if (tab === "pairs") renderPairList();
@@ -1757,6 +1894,7 @@ function render() {
   if (tab === "sellers") renderSellers();
   if (tab === "ideas") renderIdeas();
   if (tab === "hmRank") renderHimart();
+  if (tab === "hmPrice" && DATA.himartPrice && DATA.himartPrice.items.length) renderHimartPrice();
 }
 
 function start(data) {
