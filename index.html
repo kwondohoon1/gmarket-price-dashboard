@@ -37,6 +37,14 @@
   #tabs button.on { background: var(--ok-soft); color: var(--ok-dark); font-weight: 600; }
   #tabs .count { font-size: 11.5px; color: var(--faint); font-weight: 400; }
   #tabs button.on .count { color: var(--ok); }
+  #topTabs { display: flex; flex-direction: column; gap: 4px; padding: 0 4px 10px; margin-bottom: 4px; border-bottom: 1px solid var(--soft); }
+  #topTabs .toptab { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+    border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: 13px;
+    font-weight: 600; text-align: left; padding: 9px 12px; border-radius: 10px; cursor: pointer; }
+  #topTabs .toptab:hover { border-color: #c9c4b8; }
+  #topTabs .toptab.on { background: var(--ok-soft); border-color: var(--ok); color: var(--ok-dark); }
+  #topTabs .count { font-size: 11.5px; color: var(--faint); font-weight: 400; }
+  #topTabs .toptab.on .count { color: var(--ok); }
   .market { position: relative; padding: 0 4px 10px; margin-bottom: 4px; border-bottom: 1px solid var(--soft); }
   .market-toggle { width: 100%; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line);
     background: var(--card); color: #24221d; font: inherit; font-size: 14px; font-weight: 700;
@@ -338,6 +346,7 @@
     <div class="brand-name">데스크탑 가격비교</div>
     <div class="brand-sub" id="brandSub">조립PC</div>
   </div>
+  <nav id="topTabs" hidden></nav>
   <div class="market" id="market" hidden></div>
   <nav id="tabs"></nav>
   <div class="side-foot" id="sideFoot"></div>
@@ -495,15 +504,18 @@ const MARKETS = [
       { id: "hmPrice", label: "가격정보", count: () => (DATA.himartPrice && DATA.himartPrice.items ? DATA.himartPrice.items.length : "") },
     ],
   },
+];
+
+/*
+ * 마켓 위에 따로 서는 화면. 마켓 하나를 고르는 것이 아니라 두 마켓을 견주는 자리라
+ * 마켓 고르는 칸 '위'에 둔다 (마켓 목록 안에 넣으면 "G마켓을 보는 중"처럼 읽힌다).
+ */
+const TOP_TABS = [
   {
-    // 마켓 하나가 아니라 "두 마켓을 견주는 자리" — 같은 업체가 양쪽에 올린 같은 상품만 모은다
-    key: "compare",
-    name: "마켓가격비교",
-    sub: "같은 업체 · 같은 상품",
+    id: "cmpPrice",
+    label: "마켓 가격비교",
     has: () => !!(DATA.marketCompare && DATA.marketCompare.items && DATA.marketCompare.items.length),
-    tabs: [
-      { id: "cmpPrice", label: "가격 비교", count: () => (DATA.marketCompare ? DATA.marketCompare.items.length : "") },
-    ],
+    count: () => (DATA.marketCompare ? DATA.marketCompare.items.length : ""),
   },
 ];
 
@@ -565,6 +577,18 @@ function renderMarketPicker() {
 document.addEventListener("click", () => { if (marketOpen) { marketOpen = false; renderMarketPicker(); } });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && marketOpen) { marketOpen = false; renderMarketPicker(); } });
 
+function renderTopTabs() {
+  const box = $("#topTabs");
+  const list = TOP_TABS.filter((t) => t.has());
+  box.hidden = !list.length;
+  box.replaceChildren(...list.map((t) =>
+    el("button", { className: (t.id === tab ? "on " : "") + "toptab", onclick: () => goTab(t.id) }, [
+      document.createTextNode(t.label),
+      el("span", { className: "count", textContent: String(t.count() || "") }),
+    ])
+  ));
+}
+
 function renderTabs() {
   const m = currentMarket();
   $("#brandSub").textContent = m ? m.sub : "";
@@ -584,6 +608,7 @@ function renderTabs() {
 
 function goTab(id) {
   tab = id;
+  renderTopTabs();
   renderTabs();
   render();
 }
@@ -592,8 +617,11 @@ function goMarket(key) {
   market = key;
   const m = currentMarket();
   // 공통 화면(점검)을 보고 있었으면 그대로 두고, 아니면 그 마켓의 첫 화면으로
+  // 공통 화면(점검)을 보고 있었으면 그대로 두고, 아니면 그 마켓의 첫 화면으로.
+  // 위쪽 탭(마켓 가격비교)에서 마켓을 고른 것은 "그 마켓을 보겠다"는 뜻이므로 넘어간다.
   if (!COMMON_TABS.some((t) => t.id === tab)) tab = m.tabs[0].id;
   renderMarketPicker();
+  renderTopTabs();
   renderTabs();
   render();
 }
@@ -603,6 +631,7 @@ function jumpTo(marketKey, tabId) {
   market = marketKey;
   tab = tabId;
   renderMarketPicker();
+  renderTopTabs();
   renderTabs();
 }
 
@@ -1389,18 +1418,18 @@ function viewHimartPrice() {
  * 마켓마다 할인 이름이 달라서, 같은 성격끼리 맞춘 "기준" 세 가지를 골라 볼 수 있다.
  */
 const CMP_BASIS = [
-  { id: "coupon", label: "쿠폰가", gm: "쿠폰가", hm: "쿠폰 적용가", note: "누구나 받는 다운로드 쿠폰까지 적용한 값" },
-  { id: "sale", label: "판매가", gm: "할인가", hm: "판매가", note: "쿠폰·카드 할인을 넣기 전의 값" },
-  { id: "best", label: "카드포함 최저가", gm: "카드 결제가", hm: "최대혜택가", note: "특정 카드로 결제할 때의 값 — 카드 조건이 붙는다" },
+  { id: "best", label: "최대혜택가", gm: "최대혜택가", hm: "최대혜택가", note: "쿠폰과 카드·간편결제 할인까지 다 받았을 때의 값 — 두 마켓이 화면에 크게 내거는 값이에요" },
+  { id: "coupon", label: "쿠폰가", gm: "쿠폰 적용가", hm: "쿠폰 적용가", note: "누구나 받는 다운로드 쿠폰까지만 적용한 값" },
+  { id: "sale", label: "판매가", gm: "판매가", hm: "판매가", note: "쿠폰·카드 할인을 넣기 전의 값" },
 ];
-let cmpBasis = "coupon";
+let cmpBasis = "best";
 let cmpVendor = "";
 let cmpQuery = "";
 let cmpSort = "gap";
 const CMP_MISS_MAX = 60;   // 짝을 못 찾은 목록을 화면에 펼치는 최대 줄 수
 
 const cmpBasisOf = () => CMP_BASIS.find((b) => b.id === cmpBasis) || CMP_BASIS[0];
-const cmpG = (it) => (cmpBasis === "coupon" ? it.gmarket.coupon : cmpBasis === "best" ? it.gmarket.card : it.gmarket.sale);
+const cmpG = (it) => (cmpBasis === "coupon" ? it.gmarket.coupon : cmpBasis === "best" ? it.gmarket.best : it.gmarket.sale);
 const cmpH = (it) => (cmpBasis === "coupon" ? it.himart.coupon : cmpBasis === "best" ? it.himart.best : it.himart.sale);
 const cmpDiff = (it) => it.diff[cmpBasis];
 
@@ -1424,13 +1453,18 @@ function cmpPriceCell(value, sale, tip) {
   return el("td", { className: "num cmp-price", title: tip || "" }, kids);
 }
 
-/** 하이마트 할인 내역을 툴팁 글로 (쿠폰 이름·금액, 대표 카드) */
-function cmpHimartTip(it) {
+/** 할인 내역을 툴팁 글로 (쿠폰·대표 카드). 두 마켓 모양이 같아 한 함수로 쓴다 */
+function cmpTip(side, extra) {
   const lines = [];
-  for (const c of it.himart.coupons || []) lines.push("쿠폰 " + num(c.amount) + "원  " + c.name + (c.period ? " (" + c.period + ")" : ""));
-  for (const c of it.himart.cards || []) lines.push("카드 " + num(c.amount) + "원  " + c.name);
-  if (it.himart.noBenefit) lines.push("할인 혜택이 없어 판매가 그대로예요");
-  if (it.himart.hasOptions) lines.push("옵션에 따라 값이 달라지는 상품이에요 (가장 낮은 값)");
+  if (side.sale != null && side.coupon != null && side.sale !== side.coupon) {
+    lines.push("쿠폰 " + num(side.sale - side.coupon) + "원" + (side.coupons || []).map((c) => "  " + c.name).join(""));
+  } else {
+    for (const c of side.coupons || []) lines.push("쿠폰 " + (c.amount != null ? num(c.amount) + "원  " : "") + c.name + (c.period ? " (" + c.period + ")" : ""));
+  }
+  for (const c of side.cards || []) lines.push("카드 " + (c.amount != null ? num(c.amount) + "원  " : "") + c.name);
+  if (side.noBenefit) lines.push("할인 혜택이 없어 판매가 그대로예요");
+  if (side.hasOptions) lines.push("옵션에 따라 값이 달라지는 상품이에요 (가장 낮은 값)");
+  if (extra) lines.push(extra);
   return lines.join("\n");
 }
 
@@ -1498,8 +1532,8 @@ function renderMarketCompare() {
     return el("tr", {}, [
       el("td", { textContent: it.vendor }),
       el("td", { className: "cmp-title" }, titleKids),
-      cmpPriceCell(cmpG(it), it.gmarket.sale, it.gmarket.coupon == null ? "G마켓 쿠폰가는 아직 받지 못했어요 (스펙 회차가 받은 상품만 있어요)" : ""),
-      cmpPriceCell(cmpH(it), it.himart.sale, cmpHimartTip(it)),
+      cmpPriceCell(cmpG(it), it.gmarket.sale, cmpTip(it.gmarket, it.gmarket.soldout ? "지금 품절이에요" : "")),
+      cmpPriceCell(cmpH(it), it.himart.sale, cmpTip(it.himart)),
       el("td", {}, cmpWinCell(it)),
     ]);
   }));
@@ -1517,7 +1551,7 @@ function viewMarketCompare() {
   return [
     himartHead("마켓 가격비교",
       head + " — 같은 업체가 두 마켓에 올린 같은 상품만 견줍니다 · " +
-      "G마켓 " + md(c.gmarketDate) + " 순위 · 하이마트 " + md(c.himartDate) + " 가격정보 기준"),
+      "G마켓 " + md(c.gmarketDate) + " · 하이마트 " + md(c.himartDate) + " 값 기준"),
 
     el("div", { className: "controls" },
       CMP_BASIS.map((b) =>
@@ -1565,7 +1599,7 @@ function viewMarketCompare() {
     el("div", { className: "table-note", textContent:
       "상품은 업체가 붙인 모델 코드, 코드가 없으면 CPU·그래픽·메모리·저장용량이 모두 같은 것끼리 짝지었습니다. " +
       "하나라도 다르면 짝짓지 않으므로 양쪽에 다 있어도 빠진 상품이 있을 수 있습니다. " +
-      "G마켓 쿠폰가·카드 결제가는 상세를 받아 둔 상품에만 있어 없으면 '—' 로 둡니다. 값에 마우스를 올리면 하이마트 쿠폰·카드 내역이 보입니다. 퍼센트는 비싼 쪽 값 대비입니다." }),
+      "최대혜택가는 두 마켓 모두 쿠폰과 카드·간편결제 할인까지 받았을 때의 값입니다. 값에 마우스를 올리면 쿠폰·카드 내역이 보이고, 퍼센트는 비싼 쪽 값 대비입니다." }),
 
     el("details", { className: "cmp-miss" }, [
       el("summary", { textContent: "짝을 찾지 못한 상품 보기 (G마켓 " + num(missG.length) + "개 · 하이마트 " + num(missH.length) + "개)" }),
@@ -2132,6 +2166,7 @@ function render() {
 function start(data) {
   DATA = data;
   renderMarketPicker();
+  renderTopTabs();
   renderTabs();
   $("#sideFoot").textContent = "마지막 갱신\n" + String(DATA.generatedAt).slice(0, 16).replace("T", " ") + "\n(2시간마다 갱신)";
   $("#sideFoot").style.whiteSpace = "pre-line";
