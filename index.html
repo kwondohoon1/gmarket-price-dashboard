@@ -255,6 +255,27 @@
   .hp-line { font-size: 12px; line-height: 1.45; white-space: nowrap; }
   .hp-more { margin-top: 2px; }
   .hp-more summary { cursor: pointer; font-size: 11.5px; color: var(--faint); list-style-position: inside; }
+
+  /* 마켓 가격비교 */
+  .cmp-title { max-width: 440px; }
+  .cmp-title .sub { font-size: 11.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmp-price b { font-variant-numeric: tabular-nums; }
+  .cmp-price .was { display: block; font-size: 11.5px; color: var(--faint); font-weight: 400; }
+  .cmp-win { font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+  .cmp-win .cmp-pct { font-weight: 400; color: var(--faint); font-size: 11.5px; margin-left: 4px; }
+  .cmp-win.gm { color: #2c5f8a; }
+  .cmp-win.hm { color: #a96b1f; }
+  .cmp-win.tie, .cmp-win.none { color: var(--faint); font-weight: 400; }
+  .cmp-sum { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .cmp-sum .chip { font-size: 12px; padding: 5px 12px; }
+  .cmp-sum .chip.gm { background: #e8eef5; color: #2c5f8a; font-weight: 600; }
+  .cmp-sum .chip.hm { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+  .cmp-flags { margin-top: 3px; }
+  .cmp-flag { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); margin-right: 6px; }
+  .cmp-miss { margin-top: 14px; }
+  .cmp-miss summary { cursor: pointer; font-size: 12.5px; color: var(--muted); }
+  .cmp-miss ul { margin: 8px 0 0; padding-left: 18px; }
+  .cmp-miss li { font-size: 12px; color: var(--muted); line-height: 1.75; }
   .brandbar { display: flex; align-items: center; gap: 8px; min-width: 150px; }
   .brandbar i { display: block; height: 8px; border-radius: 999px; background: var(--brand); opacity: 0.45; }
   .brandbar-num { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -472,6 +493,16 @@ const MARKETS = [
       { id: "hmBrand", label: "업체 순위" },
       // 업체별 상위 상품의 판매가·쿠폰·카드 즉시할인·최대혜택가 (매일 07:00 수집)
       { id: "hmPrice", label: "가격정보", count: () => (DATA.himartPrice && DATA.himartPrice.items ? DATA.himartPrice.items.length : "") },
+    ],
+  },
+  {
+    // 마켓 하나가 아니라 "두 마켓을 견주는 자리" — 같은 업체가 양쪽에 올린 같은 상품만 모은다
+    key: "compare",
+    name: "마켓가격비교",
+    sub: "같은 업체 · 같은 상품",
+    has: () => !!(DATA.marketCompare && DATA.marketCompare.items && DATA.marketCompare.items.length),
+    tabs: [
+      { id: "cmpPrice", label: "가격 비교", count: () => (DATA.marketCompare ? DATA.marketCompare.items.length : "") },
     ],
   },
 ];
@@ -1352,6 +1383,205 @@ function viewHimartPrice() {
   ];
 }
 
+/* ═══════════ 마켓 가격비교 ═══════════ */
+/*
+ * 같은 업체가 G마켓과 하이마트에 올린 같은 상품을 한 줄에 놓고 값을 견준다.
+ * 마켓마다 할인 이름이 달라서, 같은 성격끼리 맞춘 "기준" 세 가지를 골라 볼 수 있다.
+ */
+const CMP_BASIS = [
+  { id: "coupon", label: "쿠폰가", gm: "쿠폰가", hm: "쿠폰 적용가", note: "누구나 받는 다운로드 쿠폰까지 적용한 값" },
+  { id: "sale", label: "판매가", gm: "할인가", hm: "판매가", note: "쿠폰·카드 할인을 넣기 전의 값" },
+  { id: "best", label: "카드포함 최저가", gm: "카드 결제가", hm: "최대혜택가", note: "특정 카드로 결제할 때의 값 — 카드 조건이 붙는다" },
+];
+let cmpBasis = "coupon";
+let cmpVendor = "";
+let cmpQuery = "";
+let cmpSort = "gap";
+const CMP_MISS_MAX = 60;   // 짝을 못 찾은 목록을 화면에 펼치는 최대 줄 수
+
+const cmpBasisOf = () => CMP_BASIS.find((b) => b.id === cmpBasis) || CMP_BASIS[0];
+const cmpG = (it) => (cmpBasis === "coupon" ? it.gmarket.coupon : cmpBasis === "best" ? it.gmarket.card : it.gmarket.sale);
+const cmpH = (it) => (cmpBasis === "coupon" ? it.himart.coupon : cmpBasis === "best" ? it.himart.best : it.himart.sale);
+const cmpDiff = (it) => it.diff[cmpBasis];
+
+/** 어느 마켓이 얼마나 싼가 (차이는 하이마트 − G마켓이라 양수면 G마켓이 싸다) */
+function cmpWinCell(it) {
+  const d = cmpDiff(it);
+  if (d == null) return el("span", { className: "cmp-win none", title: "한쪽 값을 아직 받지 못했어요", textContent: "비교 불가" });
+  if (d === 0) return el("span", { className: "cmp-win tie", textContent: "같음" });
+  const base = Math.max(cmpG(it) || 0, cmpH(it) || 0);
+  const pct = base ? (Math.abs(d) / base) * 100 : 0;
+  return el("span", { className: "cmp-win " + (d > 0 ? "gm" : "hm") }, [
+    document.createTextNode((d > 0 ? "G마켓" : "하이마트") + " " + num(Math.abs(d)) + "원 쌈"),
+    el("span", { className: "cmp-pct", textContent: pct ? pct.toFixed(1) + "%" : "" }),
+  ]);
+}
+
+/** 값 한 칸 — 기준가를 굵게, 그 밑에 판매가를 작게 */
+function cmpPriceCell(value, sale, tip) {
+  const kids = [el("b", { textContent: value == null ? "—" : num(value) + "원" })];
+  if (cmpBasis !== "sale") kids.push(el("span", { className: "was", textContent: sale == null ? "" : "판매가 " + num(sale) + "원" }));
+  return el("td", { className: "num cmp-price", title: tip || "" }, kids);
+}
+
+/** 하이마트 할인 내역을 툴팁 글로 (쿠폰 이름·금액, 대표 카드) */
+function cmpHimartTip(it) {
+  const lines = [];
+  for (const c of it.himart.coupons || []) lines.push("쿠폰 " + num(c.amount) + "원  " + c.name + (c.period ? " (" + c.period + ")" : ""));
+  for (const c of it.himart.cards || []) lines.push("카드 " + num(c.amount) + "원  " + c.name);
+  if (it.himart.noBenefit) lines.push("할인 혜택이 없어 판매가 그대로예요");
+  if (it.himart.hasOptions) lines.push("옵션에 따라 값이 달라지는 상품이에요 (가장 낮은 값)");
+  return lines.join("\n");
+}
+
+function cmpRows() {
+  const c = DATA.marketCompare;
+  const rows = c.items.filter((it) => {
+    if (cmpVendor && it.vendor !== cmpVendor) return false;
+    if (cmpQuery) {
+      const hay = (it.gmarket.title + " " + it.himart.title + " " + it.vendor).toLowerCase();
+      if (hay.indexOf(cmpQuery) === -1) return false;
+    }
+    return true;
+  });
+  const gapOf = (it) => { const d = cmpDiff(it); return d == null ? -1 : Math.abs(d); };
+  if (cmpSort === "gap") rows.sort((a, b) => gapOf(b) - gapOf(a));
+  else if (cmpSort === "rank") rows.sort((a, b) => (a.gmarket.rank ?? 9999) - (b.gmarket.rank ?? 9999));
+  else rows.sort((a, b) => (cmpG(b) ?? 0) - (cmpG(a) ?? 0));
+  return rows;
+}
+
+function renderMarketCompare() {
+  const c = DATA.marketCompare;
+  const basis = cmpBasisOf();
+  const rows = cmpRows();
+
+  // 요약 — 이 기준으로 어느 쪽이 싼 줄이 몇 개인지 (걸러 놓은 줄만 센다)
+  const t = { gmarket: 0, himart: 0, same: 0, unknown: 0 };
+  for (const it of rows) {
+    const d = cmpDiff(it);
+    if (d == null) t.unknown++;
+    else if (d > 0) t.gmarket++;
+    else if (d < 0) t.himart++;
+    else t.same++;
+  }
+  $("#cmpSum").replaceChildren(
+    el("span", { className: "chip gm", textContent: "G마켓이 싼 상품 " + num(t.gmarket) + "개" }),
+    el("span", { className: "chip hm", textContent: "하이마트가 싼 상품 " + num(t.himart) + "개" }),
+    el("span", { className: "chip", textContent: "값이 같음 " + num(t.same) + "개" }),
+    el("span", { className: "chip", textContent: "비교 불가 " + num(t.unknown) + "개" })
+  );
+  $("#cmpHeadG").textContent = "G마켓 " + basis.gm;
+  $("#cmpHeadH").textContent = "하이마트 " + basis.hm;
+  $("#cmpMeta").textContent = num(rows.length) + "개 · " + basis.note;
+
+  $("#cmpRows").replaceChildren(...rows.map((it) => {
+    const flags = [];
+    if (it.candidates > 1) flags.push(el("span", { className: "cmp-flag", title: "하이마트에 같은 구성이 " + it.candidates + "개 올라와 있어 그중 가장 싼 것과 견줬어요", textContent: "하이마트 " + it.candidates + "개 중 최저" }));
+    if (it.himartShared > 1) flags.push(el("span", { className: "cmp-flag", title: "G마켓에 같은 구성이 " + it.himartShared + "개 올라와 있어요 — 줄마다 따로 견줍니다", textContent: "G마켓 중복 " + it.himartShared }));
+
+    // el() 은 children 을 그대로 붙이므로 null 을 넣으면 "null" 글자가 찍힌다 — 있을 때만 담는다
+    const titleKids = [
+      el("div", { className: "hm-title" },
+        it.gmarket.url
+          ? el("a", { href: it.gmarket.url, target: "_blank", rel: "noreferrer", textContent: it.gmarket.title })
+          : document.createTextNode(it.gmarket.title)),
+      el("div", { className: "sub" }, [
+        document.createTextNode("하이마트 "),
+        it.himart.url
+          ? el("a", { href: it.himart.url, target: "_blank", rel: "noreferrer", textContent: it.himart.title })
+          : document.createTextNode(it.himart.title),
+      ]),
+    ];
+    if (flags.length) titleKids.push(el("div", { className: "cmp-flags" }, flags));
+
+    return el("tr", {}, [
+      el("td", { textContent: it.vendor }),
+      el("td", { className: "cmp-title" }, titleKids),
+      cmpPriceCell(cmpG(it), it.gmarket.sale, it.gmarket.coupon == null ? "G마켓 쿠폰가는 아직 받지 못했어요 (스펙 회차가 받은 상품만 있어요)" : ""),
+      cmpPriceCell(cmpH(it), it.himart.sale, cmpHimartTip(it)),
+      el("td", {}, cmpWinCell(it)),
+    ]);
+  }));
+}
+
+function viewMarketCompare() {
+  const c = DATA.marketCompare;
+  if (!c || !c.items.length) return [el("div", { className: "empty", textContent: "마켓 가격비교 자료가 아직 없어요 (양쪽 회차가 모두 있어야 만들어져요)" })];
+
+  const vendors = (c.vendors || []).map((v) => v.name);
+  const head = (c.vendors || []).map((v) => v.name + " " + num(v.matched) + "개").join(" · ");
+  const missG = (c.unmatched && c.unmatched.gmarket) || [];
+  const missH = (c.unmatched && c.unmatched.himart) || [];
+
+  return [
+    himartHead("마켓 가격비교",
+      head + " — 같은 업체가 두 마켓에 올린 같은 상품만 견줍니다 · " +
+      "G마켓 " + md(c.gmarketDate) + " 순위 · 하이마트 " + md(c.himartDate) + " 가격정보 기준"),
+
+    el("div", { className: "controls" },
+      CMP_BASIS.map((b) =>
+        el("button", {
+          className: "chip-btn" + (b.id === cmpBasis ? " on" : ""),
+          onclick: () => { cmpBasis = b.id; renderMarketCompare(); },
+          textContent: b.label,
+        })
+      )
+    ),
+
+    el("div", { className: "controls" }, [
+      el("select", { onchange: (e) => { cmpVendor = e.target.value; renderMarketCompare(); } }, [
+        el("option", { value: "", textContent: "전체 업체" }),
+        ...vendors.map((v) => el("option", { value: v, textContent: v, selected: v === cmpVendor })),
+      ]),
+      el("select", { onchange: (e) => { cmpSort = e.target.value; renderMarketCompare(); } }, [
+        el("option", { value: "gap", textContent: "값 차이 큰 순", selected: cmpSort === "gap" }),
+        el("option", { value: "rank", textContent: "G마켓 순위 순", selected: cmpSort === "rank" }),
+        el("option", { value: "price", textContent: "비싼 상품 순", selected: cmpSort === "price" }),
+      ]),
+      el("input", { placeholder: "상품명 검색", value: cmpQuery,
+        oninput: (e) => { cmpQuery = e.target.value.trim().toLowerCase(); renderMarketCompare(); } }),
+    ]),
+
+    el("div", { className: "cmp-sum", id: "cmpSum" }),
+
+    el("div", { className: "panel" }, [
+      el("div", { className: "panel-title" }, [
+        document.createTextNode("같은 상품, 두 마켓의 값 "),
+        el("span", { className: "mute", id: "cmpMeta" }),
+      ]),
+      el("div", { className: "scroll" }, el("table", {}, [
+        el("thead", {}, el("tr", {}, [
+          el("th", { textContent: "업체" }),
+          el("th", { textContent: "상품" }),
+          el("th", { className: "num", id: "cmpHeadG", textContent: "G마켓" }),
+          el("th", { className: "num", id: "cmpHeadH", textContent: "하이마트" }),
+          el("th", { textContent: "어디가 싼가" }),
+        ])),
+        el("tbody", { id: "cmpRows" }),
+      ])),
+    ]),
+
+    el("div", { className: "table-note", textContent:
+      "상품은 업체가 붙인 모델 코드, 코드가 없으면 CPU·그래픽·메모리·저장용량이 모두 같은 것끼리 짝지었습니다. " +
+      "하나라도 다르면 짝짓지 않으므로 양쪽에 다 있어도 빠진 상품이 있을 수 있습니다. " +
+      "G마켓 쿠폰가·카드 결제가는 상세를 받아 둔 상품에만 있어 없으면 '—' 로 둡니다. 값에 마우스를 올리면 하이마트 쿠폰·카드 내역이 보입니다. 퍼센트는 비싼 쪽 값 대비입니다." }),
+
+    el("details", { className: "cmp-miss" }, [
+      el("summary", { textContent: "짝을 찾지 못한 상품 보기 (G마켓 " + num(missG.length) + "개 · 하이마트 " + num(missH.length) + "개)" }),
+      el("div", { className: "table-note", textContent:
+        "한쪽 마켓에만 파는 상품이거나, 제목만으로는 같은 상품인지 확정할 수 없는 상품입니다. " +
+        "G마켓 쪽은 순위 목록에 든 상품만 보이므로 순위 밖 상품은 여기에도 나오지 않습니다." }),
+      el("ul", {}, [
+        ...missG.slice(0, CMP_MISS_MAX).map((x) => el("li", { textContent: "[G마켓] " + x.vendor + " · " + x.title })),
+        ...(missG.length > CMP_MISS_MAX ? [el("li", { className: "mute", textContent: "[G마켓] …외 " + num(missG.length - CMP_MISS_MAX) + "개" })] : []),
+        ...missH.slice(0, CMP_MISS_MAX).map((x) => el("li", { textContent: "[하이마트] " + x.vendor + " · " + x.title })),
+        ...(missH.length > CMP_MISS_MAX ? [el("li", { className: "mute", textContent: "[하이마트] …외 " + num(missH.length - CMP_MISS_MAX) + "개" })] : []),
+      ]),
+    ]),
+  ];
+}
+
 /* ═══════════ 업체 순위 ═══════════ */
 const SERIES_COLORS =["#23795a", "#b3382c", "#2c5f8a", "#a96b1f", "#7a5ea8", "#3f8f7a", "#c2557a", "#6b7a3f", "#8a6a4f", "#4f6f9a", "#9a4f7a", "#5a7f4f"];
 let sellerMetric = "sold";      // sold | rank | products
@@ -1887,6 +2117,7 @@ function render() {
     tab === "hmRank" ? viewHimartRank() :
     tab === "hmBrand" ? viewHimartBrands() :
     tab === "hmPrice" ? viewHimartPrice() :
+    tab === "cmpPrice" ? viewMarketCompare() :
     viewHealth();
   app.replaceChildren(...view);
   if (tab === "pairs") renderPairList();
@@ -1895,6 +2126,7 @@ function render() {
   if (tab === "ideas") renderIdeas();
   if (tab === "hmRank") renderHimart();
   if (tab === "hmPrice" && DATA.himartPrice && DATA.himartPrice.items.length) renderHimartPrice();
+  if (tab === "cmpPrice" && DATA.marketCompare && DATA.marketCompare.items.length) renderMarketCompare();
 }
 
 function start(data) {
