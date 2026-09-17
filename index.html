@@ -496,8 +496,11 @@ const MARKETS = [
     sub: "하이마트 조립PC",
     has: () =>
       !!((DATA.himart && DATA.himart.items && DATA.himart.items.length) ||
-         (DATA.himartPrice && DATA.himartPrice.items && DATA.himartPrice.items.length)),
+         (DATA.himartPrice && DATA.himartPrice.items && DATA.himartPrice.items.length) ||
+         (DATA.himartPairs && DATA.himartPairs.items && DATA.himartPairs.items.length)),
     tabs: [
+      // 한성 상품 + 같은 스펙 경쟁 상품 (G마켓 '가격 비교'와 같은 얼개)
+      { id: "hmPairs", label: "가격 비교", count: () => (DATA.himartPairs ? DATA.himartPairs.items.length : "") },
       { id: "hmRank", label: "순위", count: () => (DATA.himart && DATA.himart.items ? DATA.himart.items.length : "") },
       { id: "hmBrand", label: "업체 순위" },
       // 업체별 상위 상품의 판매가·쿠폰·카드 즉시할인·최대혜택가 (매일 07:00 수집)
@@ -1412,6 +1415,171 @@ function viewHimartPrice() {
   ];
 }
 
+/* ═══════════ 하이마트 가격 비교 ═══════════ */
+/*
+ * 한성 상품 하나마다 같은 스펙(CPU + 그래픽) 경쟁 상품을 펼쳐 값을 견준다.
+ * G마켓 '가격 비교'와 같은 얼개지만 하이마트는 판매 대수가 없어 판매 칸이 빠지고,
+ * 값은 최대혜택가(쿠폰 + 카드 즉시할인) 기준이다.
+ */
+let hpairFilter = "all";     // all | best | behind
+let hpairSort = "risk";      // risk | price | rank
+let hpairQuery = "";
+let hpairOpen = null;        // 펼쳐 둔 상품코드
+
+function hpairVerdict(i) {
+  if (!i.matchCount) return { cls: "none", text: "비교할 경쟁 상품 없음" };
+  if (i.priceRank === 1) return { cls: "best", text: "최저가 · " + i.rankOf + "곳 중 1위" };
+  if (i.diffToMin > 0) return { cls: "behind", text: i.rankOf + "곳 중 " + i.priceRank + "위 · 최저가보다 " + num(i.diffToMin) + "원 비쌈" };
+  return { cls: "best", text: i.rankOf + "곳 중 " + i.priceRank + "위" };
+}
+
+/** 값 밑에 붙는 설명 — 할인 전 판매가와 옵션 표시 */
+function hpairPriceNote(row) {
+  const bits = [];
+  if (row.sale != null && row.price != null && row.sale !== row.price) bits.push("판매가 " + num(row.sale) + "원");
+  if (row.noBenefit) bits.push("할인 없음");
+  return bits.join(" · ");
+}
+
+/** 한성 대비 램·저장 차이를 사람 말로 (경쟁 상품 줄에만 붙는다) */
+function hpairSizeChips(m) {
+  const out = [];
+  if (m.ramDiff) out.push(el("span", { className: "chip", textContent: "램 " + (m.ramDiff > 0 ? "+" : "") + m.ramDiff + "GB" }));
+  if (m.storageDiff) out.push(el("span", { className: "chip", textContent: "저장 " + (m.storageDiff > 0 ? "+" : "") + m.storageDiff + "GB" }));
+  if (m.vramUnknown) out.push(el("span", { className: "chip", textContent: "그래픽 메모리 확인 필요" }));
+  return out;
+}
+
+function hpairRivalList(item) {
+  const ours = Object.assign({}, item, { ours: true, vendor: DATA.himartPairs.ourVendor });
+  const rows = [ours, ...item.matches].sort((a, b) => (a.price == null ? Infinity : a.price) - (b.price == null ? Infinity : b.price));
+  const wrap = el("div", { className: "rivals" });
+  wrap.append(el("div", { className: "rivals-note", textContent:
+    "같은 스펙 " + rows.length + "개 상품 — 최대혜택가가 싼 순서 · 상품명을 누르면 하이마트로 갑니다" }));
+
+  for (let idx = 0; idx < rows.length; idx++) {
+    const m = rows[idx];
+    const diffEl = m.ours || m.diff == null
+      ? el("span", { className: "r-diff same", textContent: "" })
+      : m.diff === 0
+        ? el("span", { className: "r-diff same", textContent: "(0)" })
+        : el("span", { className: "r-diff " + (m.diff > 0 ? "cheap" : "exp"),
+                       textContent: (m.diff > 0 ? "(-" : "(+") + num(Math.abs(m.diff)) + ")" });
+    const note = hpairPriceNote(m);
+
+    wrap.append(el("div", { className: "rrow" + (m.ours ? " ours" : "") }, [
+      el("div", { className: "r-rank", textContent: m.price == null ? "-" : (idx + 1) + "위" }),
+      el("div", { className: "r-info" }, [
+        el("div", { className: "r-seller" }, [
+          document.createTextNode(m.vendor),
+          ...(m.ours ? [] : hpairSizeChips(m).map((c) => { c.style.marginLeft = "6px"; return c; })),
+        ]),
+        el("div", { className: "r-name" },
+          m.url ? el("a", { href: m.url, target: "_blank", rel: "noreferrer", textContent: m.title })
+                : document.createTextNode(m.title)),
+      ]),
+      el("div", { className: "r-price" }, [
+        el("b", { textContent: m.price == null ? "-" : num(m.price) + "원" + (m.hasOptions ? "~" : "") }),
+        diffEl,
+        note ? el("span", { className: "r-diff same", textContent: note }) : el("span"),
+      ]),
+    ]));
+  }
+  return wrap;
+}
+
+function hpairCard(i) {
+  const v = hpairVerdict(i);
+  const card = el("div", { className: "pcard" + (i.goodsCode === hpairOpen ? " open" : "") });
+  const chips = [
+    i.spec.cpu ? el("span", { className: "chip", textContent: i.spec.cpu.replace(/^(AMD|INTEL)-/, "") }) : null,
+    gpuText(i.spec) ? el("span", { className: "chip gpu", textContent: gpuText(i.spec) }) : null,
+    i.spec.ram ? el("span", { className: "chip", textContent: "램 " + i.spec.ram + "GB" }) : null,
+    i.spec.storage ? el("span", { className: "chip", textContent: "저장 " + i.spec.storage + "GB" }) : null,
+  ].filter(Boolean);
+  const note = hpairPriceNote(i);
+
+  const main = el("div", { className: "pcard-main" }, [
+    el("div", { className: "p-info" }, [
+      el("div", { className: "p-title", textContent: i.title }),
+      el("div", { className: "p-chips" }, chips),
+    ]),
+    el("div", { className: "p-side" }, [
+      el("div", { className: "p-price", textContent: i.price == null ? "-" : num(i.price) + "원" + (i.hasOptions ? "~" : "") }),
+      el("span", { className: "verdict " + v.cls, textContent: v.text }),
+      note ? el("div", { className: "p-meta", textContent: note }) : el("span"),
+      i.rank != null ? el("div", { className: "p-meta", textContent: "하이마트 순위 " + num(i.rank) + "위" }) : el("span"),
+    ]),
+    el("div", { className: "caret", textContent: "▼" }),
+  ]);
+  main.onclick = () => { hpairOpen = hpairOpen === i.goodsCode ? null : i.goodsCode; renderHimartPairs(); };
+  card.append(main);
+  if (i.goodsCode === hpairOpen) card.append(hpairRivalList(i));
+  return card;
+}
+
+function hpairRows() {
+  let rows = DATA.himartPairs.items.filter((i) => {
+    if (hpairFilter === "best" && i.priceRank !== 1) return false;
+    if (hpairFilter === "behind" && !(i.diffToMin > 0)) return false;
+    if (hpairQuery && i.title.toLowerCase().indexOf(hpairQuery) === -1) return false;
+    return true;
+  });
+  rows = [...rows];
+  if (hpairSort === "risk") rows.sort((a, b) => (b.diffToMin == null ? -Infinity : b.diffToMin) - (a.diffToMin == null ? -Infinity : a.diffToMin));
+  else if (hpairSort === "price") rows.sort((a, b) => (a.price == null ? Infinity : a.price) - (b.price == null ? Infinity : b.price));
+  else rows.sort((a, b) => (a.rank == null ? Infinity : a.rank) - (b.rank == null ? Infinity : b.rank));
+  return rows;
+}
+
+function renderHimartPairs() {
+  const rows = hpairRows();
+  $("#hpairList").replaceChildren(
+    ...(rows.length ? rows.map(hpairCard) : [el("div", { className: "empty", textContent: "조건에 맞는 상품이 없어요" })])
+  );
+  for (const [k, id] of [["all", "hpAll"], ["best", "hpBest"], ["behind", "hpBehind"]]) {
+    if ($("#" + id)) $("#" + id).className = "chip-btn" + (hpairFilter === k ? " on" : "");
+  }
+}
+
+function viewHimartPairs() {
+  const h = DATA.himartPairs;
+  if (!h || !h.items.length) return [el("div", { className: "empty", textContent: "하이마트 가격 비교 자료가 아직 없어요 (07:00 가격 회차가 돌면 채워져요)" })];
+  const s = h.summary;
+  const behind = Math.max(0, s.matched - s.cheapest);
+  const at = h.collectedAt ? " " + String(h.collectedAt).slice(11, 16) : "";
+
+  return [
+    himartHead("하이마트 가격 비교",
+      h.ourVendor + " " + num(s.ours) + "개 · 같은 스펙 경쟁 상품(" + h.rivals.join("·") + ") " + num(s.rivals) + "개와 견줍니다 · " +
+      "최대혜택가 기준 · " + md(h.date) + at + " 수집" +
+      (s.specUnknown ? " · 상품명에서 스펙을 못 읽은 " + num(s.specUnknown) + "개는 뺐어요" : "")),
+
+    el("div", { className: "controls" }, [
+      el("button", { id: "hpAll", className: "chip-btn on", textContent: "전체 " + num(h.items.length),
+        onclick: () => { hpairFilter = "all"; renderHimartPairs(); } }),
+      el("button", { id: "hpBest", className: "chip-btn", textContent: "한성이 최저가 " + num(s.cheapest),
+        onclick: () => { hpairFilter = "best"; renderHimartPairs(); } }),
+      el("button", { id: "hpBehind", className: "chip-btn", textContent: "경쟁사가 더 쌈 " + num(behind),
+        onclick: () => { hpairFilter = "behind"; renderHimartPairs(); } }),
+      el("select", { onchange: (e) => { hpairSort = e.target.value; renderHimartPairs(); } }, [
+        el("option", { value: "risk", textContent: "가격 차이 큰 순", selected: hpairSort === "risk" }),
+        el("option", { value: "rank", textContent: "하이마트 순위 순", selected: hpairSort === "rank" }),
+        el("option", { value: "price", textContent: "가격 낮은 순", selected: hpairSort === "price" }),
+      ]),
+      el("input", { placeholder: "상품 검색", value: hpairQuery,
+        oninput: (e) => { hpairQuery = e.target.value.trim().toLowerCase(); renderHimartPairs(); } }),
+    ]),
+
+    el("div", { className: "plist", id: "hpairList" }),
+
+    el("div", { className: "table-note", textContent:
+      "값은 모두 최대혜택가(쿠폰 + 카드 즉시할인)입니다. 경쟁 상품은 CPU와 그래픽카드가 같은 것만 붙이고, 램·저장용량이 다르면 줄에 표시합니다. " +
+      "상품명에 적히지 않은 값은 다르다고 보지 않으므로, 램·저장이 다른 상품이 섞여 있을 수 있습니다. " +
+      "쿠폰·카드 내역은 '가격정보' 탭에서 상품마다 볼 수 있습니다." }),
+  ];
+}
+
 /* ═══════════ 마켓 가격비교 ═══════════ */
 /*
  * 같은 업체가 G마켓과 하이마트에 올린 같은 상품을 한 줄에 놓고 값을 견준다.
@@ -1513,6 +1681,8 @@ function renderMarketCompare() {
     const flags = [];
     if (it.candidates > 1) flags.push(el("span", { className: "cmp-flag", title: "하이마트에 같은 구성이 " + it.candidates + "개 올라와 있어 그중 가장 싼 것과 견줬어요", textContent: "하이마트 " + it.candidates + "개 중 최저" }));
     if (it.himartShared > 1) flags.push(el("span", { className: "cmp-flag", title: "G마켓에 같은 구성이 " + it.himartShared + "개 올라와 있어요 — 줄마다 따로 견줍니다", textContent: "G마켓 중복 " + it.himartShared }));
+    // 한쪽 제목에 램·저장이 안 적혀 그 자리를 비워 두고 붙인 줄 — 후보가 하나뿐이라 붙였지만 확실도가 한 단계 낮다
+    if (it.matchBy === "loose") flags.push(el("span", { className: "cmp-flag", title: "한쪽 상품명에 램·저장용량이 적혀 있지 않아 CPU·그래픽카드로 짝지었어요 (같은 구성 후보가 하나뿐일 때만 붙입니다)", textContent: "구성 일부 미표기" }));
 
     // el() 은 children 을 그대로 붙이므로 null 을 넣으면 "null" 글자가 찍힌다 — 있을 때만 담는다
     const titleKids = [
@@ -1599,7 +1769,8 @@ function viewMarketCompare() {
     el("div", { className: "table-note", textContent:
       "상품은 업체가 붙인 모델 코드, 코드가 없으면 CPU·그래픽·메모리·저장용량이 모두 같은 것끼리 짝지었습니다. " +
       "하나라도 다르면 짝짓지 않으므로 양쪽에 다 있어도 빠진 상품이 있을 수 있습니다. " +
-      "최대혜택가는 두 마켓 모두 쿠폰과 카드·간편결제 할인까지 받았을 때의 값입니다. 값에 마우스를 올리면 쿠폰·카드 내역이 보이고, 퍼센트는 비싼 쪽 값 대비입니다." }),
+      "최대혜택가는 두 마켓 모두 쿠폰과 카드·간편결제 할인까지 받았을 때의 값입니다. 값에 마우스를 올리면 쿠폰·카드 내역이 보이고, 퍼센트는 비싼 쪽 값 대비입니다. " +
+      "'구성 일부 미표기'는 한쪽 상품명에 램·저장용량이 없어 CPU·그래픽카드로 짝지은 줄입니다 — 같은 구성 후보가 하나뿐일 때만 붙입니다." }),
 
     el("details", { className: "cmp-miss" }, [
       el("summary", { textContent: "짝을 찾지 못한 상품 보기 (G마켓 " + num(missG.length) + "개 · 하이마트 " + num(missH.length) + "개)" }),
@@ -2150,6 +2321,7 @@ function render() {
     tab === "ideas" ? viewIdeas() :
     tab === "hmRank" ? viewHimartRank() :
     tab === "hmBrand" ? viewHimartBrands() :
+    tab === "hmPairs" ? viewHimartPairs() :
     tab === "hmPrice" ? viewHimartPrice() :
     tab === "cmpPrice" ? viewMarketCompare() :
     viewHealth();
@@ -2159,6 +2331,7 @@ function render() {
   if (tab === "sellers") renderSellers();
   if (tab === "ideas") renderIdeas();
   if (tab === "hmRank") renderHimart();
+  if (tab === "hmPairs" && DATA.himartPairs && DATA.himartPairs.items.length) renderHimartPairs();
   if (tab === "hmPrice" && DATA.himartPrice && DATA.himartPrice.items.length) renderHimartPrice();
   if (tab === "cmpPrice" && DATA.marketCompare && DATA.marketCompare.items.length) renderMarketCompare();
 }
