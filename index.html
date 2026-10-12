@@ -487,6 +487,9 @@ const MARKETS = [
       { id: "pairs", label: "가격 비교", count: () => DATA.pairs.summary.ours },
       { id: "rank", label: "판매 순위", count: () => (DATA.sales && DATA.sales.daily ? DATA.sales.daily.rows.length : "") },
       { id: "sellers", label: "업체 순위" },
+      // 정한 업체의 모든 상품 판매량 — 순위 밖 상품까지 (순위는 '-' 로 둔다)
+      { id: "vsales", label: "업체 판매량", has: () => !!(DATA.vendorSales && DATA.vendorSales.vendors.length),
+        count: () => (DATA.vendorSales ? DATA.vendorSales.vendors.reduce((a, v) => a + v.products, 0) : "") },
       { id: "ideas", label: "추천 상품", count: () => (DATA.recommend ? (DATA.recommend.items || []).length : "") },
     ],
   },
@@ -603,7 +606,7 @@ function renderTabs() {
     ]);
   };
   $("#tabs").replaceChildren(
-    ...(m ? m.tabs.map(make) : []),
+    ...(m ? m.tabs.filter((t) => !t.has || t.has()).map(make) : []),
     el("div", { className: "tab-sep" }),
     ...COMMON_TABS.map(make)
   );
@@ -2049,6 +2052,139 @@ function viewSellers() {
   ];
 }
 
+/* ═══════════ 업체 판매량 ═══════════ */
+/*
+ * '업체 순위'와 무엇이 다른가: 저쪽은 **순위 목록에 든 상품**만 센다(카테고리 600위가 끝이라
+ * 그 밖의 상품은 아예 빠진다). 여기는 거꾸로 **업체의 미니샵 상품 전부**를 세우고 구매 건수를
+ * 붙인다. 그래서 순위가 없는 상품이 대부분이고, 그 자리는 '-' 로 둔다.
+ */
+let vsVendor = "";      // 비우면 전체
+let vsQuery = "";
+let vsSort = "sales";   // sales | sold1d | sold7d | rank
+let vsChips = [];       // 업체 고르기 단추 (눌렀을 때 강조를 옮기려고 들고 있는다)
+
+function vsRows() {
+  const v = DATA.vendorSales;
+  if (!v) return [];
+  const rows = [];
+  for (const ven of v.vendors) {
+    if (vsVendor && ven.name !== vsVendor) continue;
+    for (const it of ven.items) {
+      if (vsQuery && ((it.title || "") + " " + ven.name + " " + it.goodsCode).toLowerCase().indexOf(vsQuery) === -1) continue;
+      rows.push({ ...it, vendor: ven.name });
+    }
+  }
+  // 빈칸은 언제나 맨 아래로 — 못 받은 값이 1등으로 올라오면 표를 믿을 수 없다
+  const by = (key) => (a, b) => {
+    const x = a[key], y = b[key];
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    return y - x;
+  };
+  if (vsSort === "rank") {
+    rows.sort((a, b) => (a.rank == null ? 1 : b.rank == null ? -1 : a.rank - b.rank));
+  } else {
+    rows.sort(by(vsSort));
+  }
+  return rows;
+}
+
+/** 증감 칸 — 0대는 흐리게, 받지 못한 날은 '-' */
+function vsDelta(n) {
+  if (n == null) return el("span", { className: "mute", textContent: "-" });
+  if (!n) return el("span", { className: "mute", textContent: "0" });
+  return el("b", { textContent: "+" + num(n) });
+}
+
+function renderVendorSales() {
+  const v = DATA.vendorSales;
+  const rows = vsRows();
+  const shown = vsVendor ? v.vendors.filter((x) => x.name === vsVendor) : v.vendors;
+  const missing = shown.reduce((a, x) => a + x.missing, 0);
+  $("#vsMeta").textContent =
+    md(v.date) + " 기준 · 상품 " + num(rows.length) + "개" +
+    (v.prevDate ? " · 어제(" + md(v.prevDate) + ") 대비" : " · 첫 수집이라 증감은 다음 회차부터") +
+    (missing ? " · " + num(missing) + "개는 값을 받지 못했어요" : "");
+
+  $("#vsRows").replaceChildren(...rows.map((it) =>
+    el("tr", {}, [
+      el("td", { className: "num" + (it.rank == null ? " mute" : "") , textContent: it.rank == null ? "-" : String(it.rank) }),
+      el("td", { textContent: it.vendor }),
+      el("td", { className: "hm-title" },
+        it.url ? el("a", { href: it.url, target: "_blank", rel: "noreferrer", textContent: it.title || it.goodsCode })
+               : document.createTextNode(it.title || it.goodsCode)),
+      el("td", { className: "num" + (it.sales == null ? " mute" : ""), title: it.error || "" },
+        it.sales == null ? document.createTextNode("-") : el("b", { textContent: num(it.sales) })),
+      el("td", { className: "num" }, vsDelta(it.sold1d)),
+      el("td", { className: "num" }, vsDelta(it.sold7d)),
+      el("td", { className: "num" + (it.reviews == null ? " mute" : ""), textContent: it.reviews == null ? "-" : num(it.reviews) }),
+    ])
+  ));
+
+  for (const b of vsChips) b.className = "chip-btn small" + (b._vendor === vsVendor ? " on" : "");
+}
+
+function viewVendorSales() {
+  const v = DATA.vendorSales;
+  if (!v || !v.vendors.length) {
+    return [el("div", { className: "empty", textContent: "업체 판매량이 아직 없어요 (매일 07:00 가격 회차 뒤에 받아요)" })];
+  }
+  const total = v.vendors.reduce((a, x) => a + x.products, 0);
+  const at = v.collectedAt ? " " + String(v.collectedAt).slice(11, 16) : "";
+  vsChips = [];
+  const chip = (name, label) => {
+    const b = el("button", { className: "chip-btn small" + (vsVendor === name ? " on" : ""), textContent: label,
+      onclick: () => { vsVendor = name; renderVendorSales(); } });
+    b._vendor = name;
+    vsChips.push(b);
+    return b;
+  };
+
+  const sorts = [["sales", "구매 많은 순"], ["sold1d", "어제 대비"], ["sold7d", "최근 7일"], ["rank", "순위"]];
+
+  return [
+    el("div", { className: "page-head" }, el("div", {}, [
+      el("h1", { textContent: "업체 판매량" }),
+      el("div", { className: "page-sub", textContent:
+        "고른 업체가 G마켓에 올린 상품 전부와 그 구매 건수예요 · " + md(v.date) + at + " 기준 · 모두 " + num(total) + "개" }),
+    ])),
+
+    el("div", { className: "controls" }, [
+      chip("", "전체 " + num(total)),
+      ...v.vendors.map((x) => chip(x.name, x.name + " " + num(x.products))),
+      el("input", { placeholder: "상품명·상품번호 검색", value: vsQuery,
+        oninput: (e) => { vsQuery = e.target.value.trim().toLowerCase(); renderVendorSales(); } }),
+      el("select", { onchange: (e) => { vsSort = e.target.value; renderVendorSales(); } },
+        sorts.map(([k, label]) => el("option", { value: k, textContent: label, selected: k === vsSort }))),
+    ]),
+
+    el("div", { className: "panel" }, [
+      el("div", { className: "panel-title" }, [
+        document.createTextNode("상품별 구매 건수 "),
+        el("span", { className: "mute", id: "vsMeta" }),
+      ]),
+      el("div", { className: "scroll" }, el("table", {}, [
+        el("thead", {}, el("tr", {}, [
+          el("th", { className: "num", textContent: "순위" }),
+          el("th", { textContent: "업체" }),
+          el("th", { textContent: "상품" }),
+          el("th", { className: "num", textContent: "구매" }),
+          el("th", { className: "num", textContent: "어제 대비" }),
+          el("th", { className: "num", textContent: "최근 7일" }),
+          el("th", { className: "num", textContent: "상품평" }),
+        ])),
+        el("tbody", { id: "vsRows" }),
+      ])),
+    ]),
+
+    el("div", { className: "table-note", textContent:
+      "'구매'는 G마켓이 상품마다 보여 주는 누적 구매 건수입니다. '순위'는 조립PC 카테고리 순위로, 그 목록은 600위까지만 나오므로 " +
+      "대부분의 상품은 '-' 입니다 — 순위가 없다고 안 팔린 것이 아닙니다. '어제 대비'와 '최근 7일'은 구매 건수가 그만큼 늘었다는 뜻이고, " +
+      "어제 없던 상품은 견줄 값이 없어 '-' 입니다." }),
+  ];
+}
+
 /* ═══════════ 점검 ═══════════ */
 
 /** 밀리초 → "56초" / "1시간 18분" */
@@ -2318,6 +2454,7 @@ function render() {
     tab === "pairs" ? viewPairs() :
     tab === "rank" ? viewRank() :
     tab === "sellers" ? viewSellers() :
+    tab === "vsales" ? viewVendorSales() :
     tab === "ideas" ? viewIdeas() :
     tab === "hmRank" ? viewHimartRank() :
     tab === "hmBrand" ? viewHimartBrands() :
@@ -2329,6 +2466,7 @@ function render() {
   if (tab === "pairs") renderPairList();
   if (tab === "rank") renderSalesTable();
   if (tab === "sellers") renderSellers();
+  if (tab === "vsales" && DATA.vendorSales && DATA.vendorSales.vendors.length) renderVendorSales();
   if (tab === "ideas") renderIdeas();
   if (tab === "hmRank") renderHimart();
   if (tab === "hmPairs" && DATA.himartPairs && DATA.himartPairs.items.length) renderHimartPairs();
