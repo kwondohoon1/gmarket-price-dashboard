@@ -922,7 +922,8 @@ function salesRows(t, cols) {
         }
         return { r: r, sum: sum };
       })
-      .filter((x) => x.sum > 0)
+      // 안 팔린 상품도 줄은 남긴다 — 업체를 골라 놓고 보면 "이게 다인가" 를 알 수 없었다.
+      // 판매가 0 이면 아래에서 숫자가 아니라 '-' 로 적는다.
       .sort((a, b) => b.sum - a.sum)
       .map((x, i) => ({ r: x.r, no: i + 1, sum: x.sum }));
   } else {
@@ -988,7 +989,8 @@ function renderSalesTable() {
         if (price != null) box.append(el("span", { className: "subline", textContent: "최저 " + num(price) + "원" }));
         return box;
       }),
-      el("td", { className: "num" }, el("b", { textContent: num(x.sum) + "대" })),
+      el("td", { className: "num" + (x.sum ? "" : " mute") },
+        x.sum ? el("b", { textContent: num(x.sum) + "대" }) : document.createTextNode("-")),
     ]);
   }) : [el("tr", {}, el("td", { colSpan: cols.length + 4, className: "mute", textContent: "조건에 맞는 상품이 없어요" }))]));
 }
@@ -2082,8 +2084,9 @@ function vsRows() {
     if (y == null) return -1;
     return y - x;
   };
-  if (vsSort === "rank") {
-    rows.sort((a, b) => (a.rank == null ? 1 : b.rank == null ? -1 : a.rank - b.rank));
+  if (vsSort === "rank" || vsSort === "shopRank") {
+    const k = vsSort;
+    rows.sort((a, b) => (a[k] == null ? 1 : b[k] == null ? -1 : a[k] - b[k]));
   } else {
     rows.sort(by(vsSort));
   }
@@ -2110,6 +2113,7 @@ function renderVendorSales() {
   $("#vsRows").replaceChildren(...rows.map((it) =>
     el("tr", {}, [
       el("td", { className: "num" + (it.rank == null ? " mute" : "") , textContent: it.rank == null ? "-" : String(it.rank) }),
+      el("td", { className: "num" + (it.shopRank == null ? " mute" : ""), textContent: it.shopRank == null ? "-" : String(it.shopRank) }),
       el("td", { textContent: it.vendor }),
       el("td", { className: "hm-title" },
         it.url ? el("a", { href: it.url, target: "_blank", rel: "noreferrer", textContent: it.title || it.goodsCode })
@@ -2141,7 +2145,8 @@ function viewVendorSales() {
     return b;
   };
 
-  const sorts = [["sales", "구매 많은 순"], ["sold1d", "어제 대비"], ["sold7d", "최근 7일"], ["rank", "순위"]];
+  const sorts = [["sales", "구매 많은 순"], ["sold1d", "어제 대비"], ["sold7d", "최근 7일"],
+                 ["rank", "지마켓 순위"], ["shopRank", "미니샵 순위"]];
 
   return [
     el("div", { className: "page-head" }, el("div", {}, [
@@ -2166,7 +2171,8 @@ function viewVendorSales() {
       ]),
       el("div", { className: "scroll" }, el("table", {}, [
         el("thead", {}, el("tr", {}, [
-          el("th", { className: "num", textContent: "순위" }),
+          el("th", { className: "num", textContent: "지마켓 순위" }),
+          el("th", { className: "num", textContent: "미니샵 순위" }),
           el("th", { textContent: "업체" }),
           el("th", { textContent: "상품" }),
           el("th", { className: "num", textContent: "구매" }),
@@ -2179,9 +2185,11 @@ function viewVendorSales() {
     ]),
 
     el("div", { className: "table-note", textContent:
-      "'구매'는 G마켓이 상품마다 보여 주는 누적 구매 건수입니다. '순위'는 조립PC 카테고리 순위로, 그 목록은 600위까지만 나오므로 " +
-      "대부분의 상품은 '-' 입니다 — 순위가 없다고 안 팔린 것이 아닙니다. '어제 대비'와 '최근 7일'은 구매 건수가 그만큼 늘었다는 뜻이고, " +
-      "어제 없던 상품은 견줄 값이 없어 '-' 입니다." }),
+      "'구매'는 G마켓이 상품마다 보여 주는 누적 구매 건수입니다. " +
+      "'지마켓 순위'는 조립PC 카테고리 순위로, 그 목록이 600위까지만 나오는 탓에 대부분 '-' 입니다 — 순위가 없다고 안 팔린 것이 아닙니다. " +
+      "'미니샵 순위'는 그 업체 미니샵이 인기순으로 늘어놓은 차례라 모든 상품에 값이 있습니다. 다만 G마켓이 인기순을 어떻게 셈하는지는 " +
+      "공개하지 않아 순수 판매량은 아닙니다 — 미니샵 앞자리인데 구매가 적으면 업체가 밀어 주는 상품으로 보시면 됩니다. " +
+      "'어제 대비'와 '최근 7일'은 구매 건수가 그만큼 늘었다는 뜻이고, 어제 없던 상품은 견줄 값이 없어 '-' 입니다." }),
   ];
 }
 
